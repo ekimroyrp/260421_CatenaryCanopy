@@ -60,6 +60,13 @@ app.innerHTML = `
               <button id="startButton" class="pill-button action-button is-start-state" type="button">Start</button>
               <button id="resetButton" class="pill-button reset-button" type="button">Reset</button>
             </div>
+            <label class="control" for="speedSlider">
+              <div class="control-row">
+                <span>Speed</span>
+                <span id="speed-value" class="value-pill">1.00x</span>
+              </div>
+              <input id="speedSlider" type="range" min="0.1" max="4" value="1" step="0.01" />
+            </label>
             <label class="control" for="gravitySlider">
               <div class="control-row">
                 <span>Gravity</span>
@@ -247,6 +254,8 @@ const clearAnchorsButton = requireElement<HTMLButtonElement>('#clearAnchorsButto
 const exportObjButton = requireElement<HTMLButtonElement>('#exportObjButton')
 const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
+const speedSlider = requireElement<HTMLInputElement>('#speedSlider')
+const speedValue = requireElement<HTMLSpanElement>('#speed-value')
 const gravitySlider = requireElement<HTMLInputElement>('#gravitySlider')
 const gravityValue = requireElement<HTMLSpanElement>('#gravity-value')
 const springLengthSlider = requireElement<HTMLInputElement>('#springLengthSlider')
@@ -565,6 +574,10 @@ function pickSimulationVertex(clientX: number, clientY: number): THREE.Intersect
   return raycaster.intersectObject(simulation.pickPoints, false)[0] ?? null
 }
 
+function getSpeedValue(): number {
+  return Number.parseFloat(speedSlider.value)
+}
+
 function getGravityValue(): number {
   return Number.parseFloat(gravitySlider.value)
 }
@@ -677,6 +690,11 @@ function resetSimulationState(): void {
   refreshUiState()
 }
 
+function updateSpeedLabel(): void {
+  speedValue.textContent = `${getSpeedValue().toFixed(2)}x`
+  updateRangeProgress(speedSlider)
+}
+
 function updateGravityLabel(): void {
   gravityValue.textContent = `${getGravityValue().toFixed(2)} m/s^2`
   updateRangeProgress(gravitySlider)
@@ -693,6 +711,7 @@ function updateSpringStrengthLabel(): void {
 }
 
 function refreshUiState(): void {
+  updateSpeedLabel()
   updateGravityLabel()
   updateSpringLengthLabel()
   updateSpringStrengthLabel()
@@ -997,6 +1016,10 @@ clearAnchorsButton.addEventListener('click', () => {
 exportObjButton.addEventListener('click', exportObj)
 exportGlbButton.addEventListener('click', exportGlb)
 exportScreenshotButton.addEventListener('click', exportScreenshot)
+
+speedSlider.addEventListener('input', () => {
+  updateSpeedLabel()
+})
 
 gravitySlider.addEventListener('input', () => {
   updateGravityLabel()
@@ -1345,7 +1368,7 @@ function animate(): void {
   groundGrid.update(camera)
 
   if (simulation && solverRunning) {
-    simulation.update(deltaTime)
+    simulation.update(deltaTime * getSpeedValue())
   }
 
   updateHoverMarkerPosition()
@@ -1354,6 +1377,7 @@ function animate(): void {
 
 rebuildOutlineVisuals()
 bindSectionCollapses()
+updateSpeedLabel()
 updateGravityLabel()
 updateSpringLengthLabel()
 updateSpringStrengthLabel()

@@ -10,6 +10,7 @@
 - Visible mesh-point anchor editing where any mesh vertex can be pinned or unpinned
 - Vertical anchor dragging for fast support-height adjustments
 - Live hanging-mesh relaxation solver with gravity control defaulting to `9.81 m/s^2`
+- Simulation speed control for slowing down or accelerating the live relaxation playback
 - Spring-length slack control for adding more sag and reducing the overly taut membrane look
 - Spring-strength control for tightening or softening the structural response of the canopy mesh
 - Inverted display of the hanging solve so the visible result matches funicular canopy references
@@ -32,6 +33,7 @@
 - `LMB + Drag` on an anchored handle moves that anchor vertically
 - `Start / Pause` runs or pauses the live catenary relaxation
 - `Reset` rewinds the current simulation while keeping the existing outline, mesh, and pinned anchors
+- `Speed` changes how fast the live simulation advances
 - `Gravity` changes the solver acceleration in `m/s^2`
 - `Spring Length` increases or decreases mesh slack to make the canopy hang softer or tighter
 - `Spring Strength` changes how strongly the mesh springs pull the canopy toward equilibrium
