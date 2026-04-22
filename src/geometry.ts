@@ -32,8 +32,15 @@ export interface FlatMeshData {
   area: number
 }
 
+export interface MeshBuildParams {
+  density: number
+}
+
 const MIN_AREA = 0.05
 const EPSILON = 1e-6
+const DEFAULT_MESH_BUILD_PARAMS: MeshBuildParams = {
+  density: 1,
+}
 
 export function createEditableOutline(): EditableOutline {
   return {
@@ -125,14 +132,21 @@ export function pointInOutline(
   return pointInPolygonOrOnEdge(point, contour)
 }
 
-export function buildFlatMeshData(points: readonly OutlinePoint[]): FlatMeshData {
+export function buildFlatMeshData(
+  points: readonly OutlinePoint[],
+  params: Partial<MeshBuildParams> = {},
+): FlatMeshData {
+  const buildParams = {
+    ...DEFAULT_MESH_BUILD_PARAMS,
+    ...params,
+  }
   const contour = normalizeCounterClockwise(getOutlineVectors(points))
   const area = Math.abs(computeSignedArea(contour))
   const perimeter = computePerimeter(contour)
-  const targetSpacing = computeTargetSpacing(area, perimeter)
+  const targetSpacing = computeTargetSpacing(area, perimeter, buildParams.density)
   const sampledContour = resampleClosedContour(
     contour,
-    THREE.MathUtils.clamp(Math.round(perimeter / targetSpacing), contour.length * 2, 240),
+    THREE.MathUtils.clamp(Math.round(perimeter / targetSpacing), contour.length * 2, 960),
   )
 
   const vertices: THREE.Vector2[] = []
@@ -232,11 +246,17 @@ function computePerimeter(points: readonly THREE.Vector2[]): number {
   return Math.max(perimeter, EPSILON)
 }
 
-function computeTargetSpacing(area: number, perimeter: number): number {
-  const targetTriangles = THREE.MathUtils.clamp(
+function computeTargetSpacing(area: number, perimeter: number, density: number): number {
+  const safeDensity = THREE.MathUtils.clamp(density, 0.25, 4)
+  const baseTargetTriangles = THREE.MathUtils.clamp(
     Math.round(area * 52 + perimeter * 8),
     180,
     2200,
+  )
+  const targetTriangles = THREE.MathUtils.clamp(
+    Math.round(baseTargetTriangles * safeDensity),
+    60,
+    8800,
   )
   const equilateralSpacing = Math.sqrt((area * 4) / (Math.sqrt(3) * targetTriangles))
   return THREE.MathUtils.clamp(equilateralSpacing, 0.12, 0.42)

@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import {
   buildFlatMeshData,
   type FlatMeshData,
+  type MeshBuildParams,
   type OutlinePoint,
   type TriangleIndices,
 } from './geometry'
@@ -62,6 +63,7 @@ export interface CanopySimulationParams {
   stiffness: number
   maxDeltaTime: number
   displaySubdivisionLevel: number
+  meshDensity: number
 }
 
 export interface CanopySimulationState {
@@ -87,6 +89,7 @@ const DEFAULT_PARAMS: CanopySimulationParams = {
   stiffness: 0.76,
   maxDeltaTime: 1 / 24,
   displaySubdivisionLevel: 1,
+  meshDensity: 1,
 }
 
 const WIRE_SURFACE_OFFSET = 0.008
@@ -160,7 +163,10 @@ export class CanopySimulation {
       ...params,
     }
 
-    this.flatMesh = buildFlatMeshData(outline)
+    const meshParams: MeshBuildParams = {
+      density: this.params.meshDensity,
+    }
+    this.flatMesh = buildFlatMeshData(outline, meshParams)
     const simData = createSimulationTopology(this.flatMesh, this.params)
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
@@ -261,6 +267,42 @@ export class CanopySimulation {
 
   setPressure(pressure: number): void {
     this.state.targetPressure = THREE.MathUtils.clamp(pressure, 0, 100)
+  }
+
+  setPressureScale(pressureScale: number): void {
+    this.params.pressureScale = THREE.MathUtils.clamp(pressureScale, 0, 200)
+  }
+
+  setPressureResponse(pressureResponse: number): void {
+    this.params.pressureResponse = THREE.MathUtils.clamp(pressureResponse, 0.1, 20)
+  }
+
+  setDamping(damping: number): void {
+    this.params.damping = THREE.MathUtils.clamp(damping, 0, 40)
+  }
+
+  setSubsteps(substeps: number): void {
+    this.params.substeps = THREE.MathUtils.clamp(Math.round(substeps), 1, 20)
+  }
+
+  setConstraintIterations(constraintIterations: number): void {
+    this.params.constraintIterations = THREE.MathUtils.clamp(
+      Math.round(constraintIterations),
+      1,
+      60,
+    )
+  }
+
+  setStiffness(stiffness: number): void {
+    const nextStiffness = THREE.MathUtils.clamp(stiffness, 0, 2)
+    this.params.stiffness = nextStiffness
+    for (const spring of this.state.springs) {
+      spring.stiffness = nextStiffness
+    }
+  }
+
+  setMaxDeltaTime(maxDeltaTime: number): void {
+    this.params.maxDeltaTime = THREE.MathUtils.clamp(maxDeltaTime, 1 / 240, 0.2)
   }
 
   reset(): void {

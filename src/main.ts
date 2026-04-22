@@ -67,6 +67,69 @@ app.innerHTML = `
               </div>
               <input id="pressureSlider" type="range" min="0" max="100" value="0.42" step="0.01" />
             </label>
+            <label class="control" for="pressureScaleSlider">
+              <div class="control-row">
+                <span>Pressure Scale</span>
+                <span id="pressure-scale-value" class="value-pill">26.0</span>
+              </div>
+              <input id="pressureScaleSlider" type="range" min="0" max="200" value="26" step="0.1" />
+            </label>
+            <label class="control" for="pressureResponseSlider">
+              <div class="control-row">
+                <span>Pressure Response</span>
+                <span id="pressure-response-value" class="value-pill">1.90</span>
+              </div>
+              <input id="pressureResponseSlider" type="range" min="0.1" max="20" value="1.9" step="0.1" />
+            </label>
+            <label class="control" for="dampingSlider">
+              <div class="control-row">
+                <span>Damping</span>
+                <span id="damping-value" class="value-pill">4.20</span>
+              </div>
+              <input id="dampingSlider" type="range" min="0" max="40" value="4.2" step="0.1" />
+            </label>
+            <label class="control" for="substepsSlider">
+              <div class="control-row">
+                <span>Substeps</span>
+                <span id="substeps-value" class="value-pill">5</span>
+              </div>
+              <input id="substepsSlider" type="range" min="1" max="20" value="5" step="1" />
+            </label>
+            <label class="control" for="constraintIterationsSlider">
+              <div class="control-row">
+                <span>Constraint Iterations</span>
+                <span id="constraint-iterations-value" class="value-pill">10</span>
+              </div>
+              <input id="constraintIterationsSlider" type="range" min="1" max="60" value="10" step="1" />
+            </label>
+            <label class="control" for="stiffnessSlider">
+              <div class="control-row">
+                <span>Stiffness</span>
+                <span id="stiffness-value" class="value-pill">0.76</span>
+              </div>
+              <input id="stiffnessSlider" type="range" min="0" max="2" value="0.76" step="0.01" />
+            </label>
+            <label class="control" for="maxDeltaTimeSlider">
+              <div class="control-row">
+                <span>Max Delta Time</span>
+                <span id="max-delta-time-value" class="value-pill">0.0417 s</span>
+              </div>
+              <input id="maxDeltaTimeSlider" type="range" min="0.004" max="0.2" value="0.041667" step="0.001" />
+            </label>
+            <label class="control" for="subdivisionLevelSlider">
+              <div class="control-row">
+                <span>Subdivision Level</span>
+                <span id="subdivision-level-value" class="value-pill">1</span>
+              </div>
+              <input id="subdivisionLevelSlider" type="range" min="0" max="4" value="1" step="1" />
+            </label>
+            <label class="control" for="meshDensitySlider">
+              <div class="control-row">
+                <span>Mesh Density</span>
+                <span id="mesh-density-value" class="value-pill">1.00x</span>
+              </div>
+              <input id="meshDensitySlider" type="range" min="0.25" max="4" value="1" step="0.05" />
+            </label>
           </div>
         </section>
         <section class="panel-section">
@@ -230,6 +293,24 @@ const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
 const pressureSlider = requireElement<HTMLInputElement>('#pressureSlider')
 const pressureValue = requireElement<HTMLSpanElement>('#pressure-value')
+const pressureScaleSlider = requireElement<HTMLInputElement>('#pressureScaleSlider')
+const pressureScaleValue = requireElement<HTMLSpanElement>('#pressure-scale-value')
+const pressureResponseSlider = requireElement<HTMLInputElement>('#pressureResponseSlider')
+const pressureResponseValue = requireElement<HTMLSpanElement>('#pressure-response-value')
+const dampingSlider = requireElement<HTMLInputElement>('#dampingSlider')
+const dampingValue = requireElement<HTMLSpanElement>('#damping-value')
+const substepsSlider = requireElement<HTMLInputElement>('#substepsSlider')
+const substepsValue = requireElement<HTMLSpanElement>('#substeps-value')
+const constraintIterationsSlider = requireElement<HTMLInputElement>('#constraintIterationsSlider')
+const constraintIterationsValue = requireElement<HTMLSpanElement>('#constraint-iterations-value')
+const stiffnessSlider = requireElement<HTMLInputElement>('#stiffnessSlider')
+const stiffnessValue = requireElement<HTMLSpanElement>('#stiffness-value')
+const maxDeltaTimeSlider = requireElement<HTMLInputElement>('#maxDeltaTimeSlider')
+const maxDeltaTimeValue = requireElement<HTMLSpanElement>('#max-delta-time-value')
+const subdivisionLevelSlider = requireElement<HTMLInputElement>('#subdivisionLevelSlider')
+const subdivisionLevelValue = requireElement<HTMLSpanElement>('#subdivision-level-value')
+const meshDensitySlider = requireElement<HTMLInputElement>('#meshDensitySlider')
+const meshDensityValue = requireElement<HTMLSpanElement>('#mesh-density-value')
 const anchorCountValue = requireElement<HTMLSpanElement>('#anchor-count-value')
 const baseGridToggle = requireElement<HTMLInputElement>('#baseGridToggle')
 const wireToggle = requireElement<HTMLInputElement>('#wireToggle')
@@ -522,6 +603,57 @@ function getPressureValue(): number {
   return Number.parseFloat(pressureSlider.value) || 0
 }
 
+function getPressureScaleValue(): number {
+  return Number.parseFloat(pressureScaleSlider.value) || 26
+}
+
+function getPressureResponseValue(): number {
+  return Number.parseFloat(pressureResponseSlider.value) || 1.9
+}
+
+function getDampingValue(): number {
+  return Number.parseFloat(dampingSlider.value) || 4.2
+}
+
+function getSubstepsValue(): number {
+  return Math.max(1, Math.round(Number.parseFloat(substepsSlider.value) || 5))
+}
+
+function getConstraintIterationsValue(): number {
+  return Math.max(1, Math.round(Number.parseFloat(constraintIterationsSlider.value) || 10))
+}
+
+function getStiffnessValue(): number {
+  return Number.parseFloat(stiffnessSlider.value) || 0.76
+}
+
+function getMaxDeltaTimeValue(): number {
+  return Number.parseFloat(maxDeltaTimeSlider.value) || 1 / 24
+}
+
+function getSubdivisionLevelValue(): number {
+  return Math.max(0, Math.round(Number.parseFloat(subdivisionLevelSlider.value) || 1))
+}
+
+function getMeshDensityValue(): number {
+  return Number.parseFloat(meshDensitySlider.value) || 1
+}
+
+function getSimulationBuildParams() {
+  return {
+    pressure: getPressureValue(),
+    pressureScale: getPressureScaleValue(),
+    pressureResponse: getPressureResponseValue(),
+    damping: getDampingValue(),
+    substeps: getSubstepsValue(),
+    constraintIterations: getConstraintIterationsValue(),
+    stiffness: getStiffnessValue(),
+    maxDeltaTime: getMaxDeltaTimeValue(),
+    displaySubdivisionLevel: getSubdivisionLevelValue(),
+    meshDensity: getMeshDensityValue(),
+  }
+}
+
 function updateRangeProgress(input: HTMLInputElement): void {
   const min = Number.parseFloat(input.min || '0')
   const max = Number.parseFloat(input.max || '1')
@@ -557,15 +689,23 @@ function updateOutlinePoint(pointId: number, point: THREE.Vector3): void {
   refreshUiState()
 }
 
-function buildSimulation(): void {
+function buildSimulation(preserveAnchorHeights = false): void {
+  const previousAnchorHeights =
+    preserveAnchorHeights && simulation
+      ? simulation.getAnchorVertices().map((anchor) => anchor.position.y)
+      : []
   disposeSimulation()
-  simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), {
-    pressure: getPressureValue(),
-  })
+  simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), getSimulationBuildParams())
   simulationAccumulator = 0
   simulation.setWireframeVisible(showWireframe)
   simulation.setReflectionEnabled(reflectionsEnabled)
   scene.add(simulation.mesh)
+  if (previousAnchorHeights.length > 0) {
+    const nextAnchors = simulation.getAnchorVertices()
+    for (let index = 0; index < Math.min(previousAnchorHeights.length, nextAnchors.length); index += 1) {
+      simulation.setPinnedVertexDisplayHeight(nextAnchors[index].index, previousAnchorHeights[index])
+    }
+  }
   rebuildOutlineVisuals()
   rebuildAnchorHandles()
 }
@@ -621,8 +761,62 @@ function updatePressureLabel(): void {
   updateRangeProgress(pressureSlider)
 }
 
+function updatePressureScaleLabel(): void {
+  pressureScaleValue.textContent = getPressureScaleValue().toFixed(1)
+  updateRangeProgress(pressureScaleSlider)
+}
+
+function updatePressureResponseLabel(): void {
+  pressureResponseValue.textContent = getPressureResponseValue().toFixed(2)
+  updateRangeProgress(pressureResponseSlider)
+}
+
+function updateDampingLabel(): void {
+  dampingValue.textContent = getDampingValue().toFixed(2)
+  updateRangeProgress(dampingSlider)
+}
+
+function updateSubstepsLabel(): void {
+  substepsValue.textContent = `${getSubstepsValue()}`
+  updateRangeProgress(substepsSlider)
+}
+
+function updateConstraintIterationsLabel(): void {
+  constraintIterationsValue.textContent = `${getConstraintIterationsValue()}`
+  updateRangeProgress(constraintIterationsSlider)
+}
+
+function updateStiffnessLabel(): void {
+  stiffnessValue.textContent = getStiffnessValue().toFixed(2)
+  updateRangeProgress(stiffnessSlider)
+}
+
+function updateMaxDeltaTimeLabel(): void {
+  maxDeltaTimeValue.textContent = `${getMaxDeltaTimeValue().toFixed(4)} s`
+  updateRangeProgress(maxDeltaTimeSlider)
+}
+
+function updateSubdivisionLevelLabel(): void {
+  subdivisionLevelValue.textContent = `${getSubdivisionLevelValue()}`
+  updateRangeProgress(subdivisionLevelSlider)
+}
+
+function updateMeshDensityLabel(): void {
+  meshDensityValue.textContent = `${getMeshDensityValue().toFixed(2)}x`
+  updateRangeProgress(meshDensitySlider)
+}
+
 function refreshUiState(): void {
   updatePressureLabel()
+  updatePressureScaleLabel()
+  updatePressureResponseLabel()
+  updateDampingLabel()
+  updateSubstepsLabel()
+  updateConstraintIterationsLabel()
+  updateStiffnessLabel()
+  updateMaxDeltaTimeLabel()
+  updateSubdivisionLevelLabel()
+  updateMeshDensityLabel()
 
   const anchorCount = simulation?.getPinnedCount() ?? 0
   anchorCountValue.textContent = `${anchorCount}`
@@ -919,6 +1113,56 @@ exportScreenshotButton.addEventListener('click', exportScreenshot)
 pressureSlider.addEventListener('input', () => {
   updatePressureLabel()
   simulation?.setPressure(getPressureValue())
+  refreshUiState()
+})
+
+pressureScaleSlider.addEventListener('input', () => {
+  updatePressureScaleLabel()
+  simulation?.setPressureScale(getPressureScaleValue())
+})
+
+pressureResponseSlider.addEventListener('input', () => {
+  updatePressureResponseLabel()
+  simulation?.setPressureResponse(getPressureResponseValue())
+})
+
+dampingSlider.addEventListener('input', () => {
+  updateDampingLabel()
+  simulation?.setDamping(getDampingValue())
+})
+
+substepsSlider.addEventListener('input', () => {
+  updateSubstepsLabel()
+  simulation?.setSubsteps(getSubstepsValue())
+})
+
+constraintIterationsSlider.addEventListener('input', () => {
+  updateConstraintIterationsLabel()
+  simulation?.setConstraintIterations(getConstraintIterationsValue())
+})
+
+stiffnessSlider.addEventListener('input', () => {
+  updateStiffnessLabel()
+  simulation?.setStiffness(getStiffnessValue())
+})
+
+maxDeltaTimeSlider.addEventListener('input', () => {
+  updateMaxDeltaTimeLabel()
+  simulation?.setMaxDeltaTime(getMaxDeltaTimeValue())
+})
+
+subdivisionLevelSlider.addEventListener('input', () => {
+  updateSubdivisionLevelLabel()
+  simulation?.setSubdivisionLevel(getSubdivisionLevelValue())
+})
+
+meshDensitySlider.addEventListener('input', () => {
+  updateMeshDensityLabel()
+  if (!simulation) {
+    return
+  }
+
+  buildSimulation(true)
   refreshUiState()
 })
 

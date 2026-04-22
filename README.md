@@ -11,6 +11,8 @@
 - Corner-only anchor workflow where the outline corners become the fixed supports automatically
 - Vertical corner-anchor dragging for fast support-height adjustments
 - Pressure-driven canopy shaping with live `Pressure` control from `0` to `100`
+- Advanced solver sliders for pressure scale, pressure response, damping, substeps, constraint iterations, stiffness, and max delta time
+- Mesh refinement sliders for subdivision level and mesh density
 - Smoothed render surface with wire overlay and foil material toggle
 - OBJ export, GLB export, and screenshot export
 
@@ -32,6 +34,9 @@
 - `Start / Pause` runs or pauses the live inflation solve
 - `Reset` rewinds the current simulation while keeping the existing outline, mesh, and corner anchors
 - `Pressure` changes the inflation force from `0` to `100`
+- `Pressure Scale`, `Pressure Response`, `Damping`, `Substeps`, `Constraint Iterations`, `Stiffness`, and `Max Delta Time` tune the solver behavior
+- `Subdivision Level` smooths the rendered canopy surface
+- `Mesh Density` rebuilds the canopy mesh with coarser or finer triangulation
 - `Base Grid`, `Mesh Wires`, and `Foil Material` toggle display layers
 - `Mouse Wheel` zooms, `MMB` pans, and `RMB` orbits
 - `Export OBJ`, `Export GLB`, and `Export Screenshot` save the current result
