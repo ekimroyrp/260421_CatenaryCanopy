@@ -282,11 +282,16 @@ export class CanopySimulation {
 
   reset(): void {
     for (let index = 0; index < this.state.positions.length; index += 1) {
-      this.state.positions[index].copy(this.state.restPositions[index])
-      this.state.previousPositions[index].copy(this.state.restPositions[index])
+      const resetPosition = this.pinnedMask[index]
+        ? this.state.pinnedTargets[index]
+        : this.state.restPositions[index]
+
+      this.state.positions[index].copy(resetPosition)
+      this.state.previousPositions[index].copy(resetPosition)
       this.state.velocities[index].set(0, 0, 0)
-      this.state.pinnedTargets[index].copy(this.state.restPositions[index])
-      this.pinnedMask[index] = false
+      if (!this.pinnedMask[index]) {
+        this.state.pinnedTargets[index].copy(this.state.restPositions[index])
+      }
     }
 
     this.syncGeometry()
@@ -301,6 +306,14 @@ export class CanopySimulation {
     this.params.restLengthScale = nextScale
     for (const spring of this.state.springs) {
       spring.restLength = spring.baseLength * nextScale
+    }
+  }
+
+  setSpringStrength(strength: number): void {
+    const nextStrength = THREE.MathUtils.clamp(strength, 0.1, 2)
+    this.params.stiffness = nextStrength
+    for (const spring of this.state.springs) {
+      spring.stiffness = nextStrength
     }
   }
 

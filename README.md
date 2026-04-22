@@ -11,6 +11,7 @@
 - Vertical anchor dragging for fast support-height adjustments
 - Live hanging-mesh relaxation solver with gravity control defaulting to `9.81 m/s^2`
 - Spring-length slack control for adding more sag and reducing the overly taut membrane look
+- Spring-strength control for tightening or softening the structural response of the canopy mesh
 - Inverted display of the hanging solve so the visible result matches funicular canopy references
 - Wire overlay, foil material toggle, OBJ export, GLB export, and screenshot export
 
@@ -30,9 +31,10 @@
 - `LMB` on a visible mesh point toggles it as an anchor
 - `LMB + Drag` on an anchored handle moves that anchor vertically
 - `Start / Pause` runs or pauses the live catenary relaxation
-- `Reset` clears the current canopy and returns to outline drawing
+- `Reset` rewinds the current simulation while keeping the existing outline, mesh, and pinned anchors
 - `Gravity` changes the solver acceleration in `m/s^2`
 - `Spring Length` increases or decreases mesh slack to make the canopy hang softer or tighter
+- `Spring Strength` changes how strongly the mesh springs pull the canopy toward equilibrium
 - `Base Grid`, `Mesh Wires`, and `Foil Material` toggle display layers
 - `Mouse Wheel` zooms, `MMB` pans, and `RMB` orbits
 - `Export OBJ`, `Export GLB`, and `Export Screenshot` save the current result

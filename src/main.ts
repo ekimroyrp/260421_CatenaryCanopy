@@ -74,6 +74,13 @@ app.innerHTML = `
               </div>
               <input id="springLengthSlider" type="range" min="1" max="1.35" value="1.08" step="0.005" />
             </label>
+            <label class="control" for="springStrengthSlider">
+              <div class="control-row">
+                <span>Spring Strength</span>
+                <span id="spring-strength-value" class="value-pill">0.92</span>
+              </div>
+              <input id="springStrengthSlider" type="range" min="0.1" max="2" value="0.92" step="0.01" />
+            </label>
           </div>
         </section>
         <section class="panel-section">
@@ -244,6 +251,8 @@ const gravitySlider = requireElement<HTMLInputElement>('#gravitySlider')
 const gravityValue = requireElement<HTMLSpanElement>('#gravity-value')
 const springLengthSlider = requireElement<HTMLInputElement>('#springLengthSlider')
 const springLengthValue = requireElement<HTMLSpanElement>('#spring-length-value')
+const springStrengthSlider = requireElement<HTMLInputElement>('#springStrengthSlider')
+const springStrengthValue = requireElement<HTMLSpanElement>('#spring-strength-value')
 const anchorCountValue = requireElement<HTMLSpanElement>('#anchor-count-value')
 const baseGridToggle = requireElement<HTMLInputElement>('#baseGridToggle')
 const wireToggle = requireElement<HTMLInputElement>('#wireToggle')
@@ -564,6 +573,10 @@ function getSpringLengthValue(): number {
   return Number.parseFloat(springLengthSlider.value)
 }
 
+function getSpringStrengthValue(): number {
+  return Number.parseFloat(springStrengthSlider.value)
+}
+
 function updateRangeProgress(input: HTMLInputElement): void {
   const min = Number.parseFloat(input.min || '0')
   const max = Number.parseFloat(input.max || '1')
@@ -603,6 +616,7 @@ function buildSimulation(): void {
   disposeSimulation()
   simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), {
     gravity: getGravityValue(),
+    stiffness: getSpringStrengthValue(),
     restLengthScale: getSpringLengthValue(),
   })
   simulation.setWireframeVisible(showWireframe)
@@ -647,17 +661,19 @@ function disposeSimulation(): void {
   rebuildAnchorHandles()
 }
 
-function resetEditor(): void {
+function resetSimulationState(): void {
+  if (!simulation) {
+    return
+  }
+
   solverRunning = false
   pendingHandleClick = null
   draggingOutlinePointId = null
   draggingAnchorIndex = null
   hoveredVertexIndex = null
-  hoverVertexMarker.visible = false
-  disposeSimulation()
-  nextPointId = 1
-  outline = createEditableOutline()
-  rebuildOutlineVisuals()
+  simulation.reset()
+  rebuildAnchorHandles()
+  updateHoverMarkerPosition()
   refreshUiState()
 }
 
@@ -671,9 +687,15 @@ function updateSpringLengthLabel(): void {
   updateRangeProgress(springLengthSlider)
 }
 
+function updateSpringStrengthLabel(): void {
+  springStrengthValue.textContent = getSpringStrengthValue().toFixed(2)
+  updateRangeProgress(springStrengthSlider)
+}
+
 function refreshUiState(): void {
   updateGravityLabel()
   updateSpringLengthLabel()
+  updateSpringStrengthLabel()
 
   const anchorCount = simulation?.getPinnedCount() ?? 0
   anchorCountValue.textContent = `${anchorCount}`
@@ -703,7 +725,8 @@ function refreshUiState(): void {
     return
   }
 
-  statusText.textContent = 'Anchors are set. Press Start, drag anchors, or increase Spring Length for more sag.'
+  statusText.textContent =
+    'Anchors are set. Press Start, drag anchors, or tune Spring Length and Spring Strength.'
 }
 
 function applyDisplayVisibilityState(): void {
@@ -960,7 +983,7 @@ function isTypingInUi(): boolean {
 }
 
 startButton.addEventListener('click', toggleSolver)
-resetButton.addEventListener('click', resetEditor)
+resetButton.addEventListener('click', resetSimulationState)
 clearAnchorsButton.addEventListener('click', () => {
   if (!simulation) {
     return
@@ -995,6 +1018,19 @@ springLengthSlider.addEventListener('input', () => {
   }
 
   simulation.setRestLengthScale(getSpringLengthValue())
+  if (!solverRunning && simulation.getPinnedCount() > 0) {
+    simulation.settle(10)
+    rebuildAnchorHandles()
+  }
+})
+
+springStrengthSlider.addEventListener('input', () => {
+  updateSpringStrengthLabel()
+  if (!simulation) {
+    return
+  }
+
+  simulation.setSpringStrength(getSpringStrengthValue())
   if (!solverRunning && simulation.getPinnedCount() > 0) {
     simulation.settle(10)
     rebuildAnchorHandles()
@@ -1320,6 +1356,7 @@ rebuildOutlineVisuals()
 bindSectionCollapses()
 updateGravityLabel()
 updateSpringLengthLabel()
+updateSpringStrengthLabel()
 applyDisplayVisibilityState()
 applyReflectionState()
 refreshUiState()
