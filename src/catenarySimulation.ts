@@ -53,6 +53,8 @@ export interface AnchorVertex {
   position: THREE.Vector3
 }
 
+export type Vector3Tuple = [number, number, number]
+
 export interface CanopySimulationParams {
   useCornerAnchors: boolean
   pressure: number
@@ -79,6 +81,15 @@ export interface CanopySimulationState {
   springs: SpringConstraint[]
   triangles: TriangleIndices[]
   geometry: THREE.BufferGeometry
+}
+
+export interface CanopySimulationSnapshot {
+  currentPressure: number
+  targetPressure: number
+  positions: Vector3Tuple[]
+  velocities: Vector3Tuple[]
+  pinnedTargets: Vector3Tuple[]
+  anchorIndices: number[]
 }
 
 const DEFAULT_PARAMS: CanopySimulationParams = {
@@ -359,6 +370,52 @@ export class CanopySimulation {
     }
 
     this.syncGeometry()
+  }
+
+  captureSnapshot(): CanopySimulationSnapshot {
+    return {
+      currentPressure: this.state.currentPressure,
+      targetPressure: this.state.targetPressure,
+      positions: this.state.positions.map(vectorToTuple),
+      velocities: this.state.velocities.map(vectorToTuple),
+      pinnedTargets: this.state.pinnedTargets.map(vectorToTuple),
+      anchorIndices: [...this.state.anchorIndices],
+    }
+  }
+
+  restoreSnapshot(snapshot: CanopySimulationSnapshot): boolean {
+    const vertexCount = this.state.positions.length
+    if (
+      snapshot.positions.length !== vertexCount ||
+      snapshot.velocities.length !== vertexCount ||
+      snapshot.pinnedTargets.length !== vertexCount
+    ) {
+      return false
+    }
+
+    this.state.currentPressure = snapshot.currentPressure
+    this.state.targetPressure = snapshot.targetPressure
+
+    for (let index = 0; index < vertexCount; index += 1) {
+      setVectorFromTuple(this.state.positions[index], snapshot.positions[index])
+      setVectorFromTuple(this.previousPositions[index], snapshot.positions[index])
+      setVectorFromTuple(this.state.velocities[index], snapshot.velocities[index])
+      setVectorFromTuple(this.state.pinnedTargets[index], snapshot.pinnedTargets[index])
+      this.pinnedMask[index] = false
+    }
+
+    this.state.anchorIndices.splice(
+      0,
+      this.state.anchorIndices.length,
+      ...snapshot.anchorIndices.filter((anchorIndex) => anchorIndex >= 0 && anchorIndex < vertexCount),
+    )
+
+    for (const anchorIndex of this.state.anchorIndices) {
+      this.pinnedMask[anchorIndex] = true
+    }
+
+    this.syncGeometry()
+    return true
   }
 
   getPinnedCount(): number {
@@ -1000,6 +1057,14 @@ function buildCrownWeights(flatMesh: FlatMeshData): Float32Array {
   }
 
   return weights
+}
+
+function vectorToTuple(vector: THREE.Vector3): Vector3Tuple {
+  return [vector.x, vector.y, vector.z]
+}
+
+function setVectorFromTuple(target: THREE.Vector3, tuple: Vector3Tuple): void {
+  target.set(tuple[0], tuple[1], tuple[2])
 }
 
 function distanceToSeamPath(

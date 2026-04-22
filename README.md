@@ -9,6 +9,7 @@
 - Automatic adaptive Delaunay mesh generation from the drawn boundary, with a single rendered and simulated canopy surface.
 - Corner anchors can be created automatically, and any visible mesh vertex can also be clicked to become an extra anchor.
 - Anchor editing includes vertical drag movement, double-click deletion for added anchors, ground-all anchors, clear extra anchors, and full scene clear back to blank drawing mode.
+- Snapshot-based editor history supports undo and redo for outline edits, anchor edits, and committed control changes without breaking the current canopy workflow.
 - Physics controls include live pressure shaping, crown bias, pressure scale, pressure response, damping, substeps, constraint iterations, stiffness, max delta time, subdivision level, and mesh density.
 - Physics value fields are editable directly by typing, while staying synced with the sliders.
 - Hover feedback highlights interactive outline points and anchors, including a green close-state highlight on the first point when the outline can be finished.
@@ -29,6 +30,7 @@
 - `LMB` on a visible mesh vertex adds that vertex as an anchor.
 - `LMB + Drag` on an anchor moves it vertically.
 - `Double LMB` on an added anchor deletes that anchor.
+- `Ctrl+Z` undoes editor actions and `Ctrl+Y` / `Ctrl+Shift+Z` redoes them.
 - `Start / Pause` runs or pauses the live inflation solve.
 - `Reset` rewinds the current solve while keeping the current outline, mesh, and anchors.
 - `Clear` in `Simulation` removes the outline, mesh, and anchors and returns to blank drawing mode.

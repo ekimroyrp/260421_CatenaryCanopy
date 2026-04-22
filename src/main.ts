@@ -14,6 +14,7 @@ import {
 import {
   buildCanopyFromOutline,
   type CanopySimulation,
+  type CanopySimulationSnapshot,
 } from './catenarySimulation'
 import { InfiniteFadingGrid } from './infiniteGrid'
 
@@ -30,6 +31,33 @@ interface PendingHandleClick {
 interface AnchorSnapshot {
   position: THREE.Vector3
   isCornerAnchor: boolean
+}
+
+interface EditorControlState {
+  pressure: number
+  crownBias: number
+  pressureScale: number
+  pressureResponse: number
+  damping: number
+  substeps: number
+  constraintIterations: number
+  stiffness: number
+  maxDeltaTime: number
+  subdivisionLevel: number
+  meshDensity: number
+  useCornerAnchors: boolean
+  showBaseGrid: boolean
+  showWireframe: boolean
+  reflectionsEnabled: boolean
+}
+
+interface EditorHistoryState {
+  outlinePoints: OutlinePoint[]
+  outlineClosed: boolean
+  nextPointId: number
+  controls: EditorControlState
+  simulationSnapshot: CanopySimulationSnapshot | null
+  solverRunning: boolean
 }
 
 document.title = '260421_CatenaryCanopy'
@@ -608,6 +636,7 @@ const clock = new THREE.Clock()
 const CLICK_DRAG_THRESHOLD = 6
 const ANCHOR_DOUBLE_CLICK_WINDOW_MS = 320
 const MIN_OUTLINE_SEGMENT_LENGTH = 0.06
+const MAX_EDITOR_HISTORY = 100
 const EXPORT_BASE_NAME = '260421_CatenaryCanopy'
 const FIXED_SIMULATION_STEP = 1 / 60
 const MAX_SIMULATION_STEPS_PER_FRAME = 8
@@ -639,6 +668,9 @@ let useCornerAnchors = cornerAnchorsToggle.checked
 let showBaseGrid = baseGridToggle.checked
 let showWireframe = wireToggle.checked
 let reflectionsEnabled = reflectionToggle.checked
+const undoHistory: EditorHistoryState[] = []
+const redoHistory: EditorHistoryState[] = []
+let restoringHistory = false
 
 function updatePointer(clientX: number, clientY: number): void {
   const rect = renderer.domElement.getBoundingClientRect()
@@ -885,6 +917,7 @@ function commitValueInput(
   )
   slider.value = `${nextValue}`
   onCommit()
+  commitEditorHistoryState()
 }
 
 function bindValueInput(
@@ -1018,6 +1051,260 @@ function getSimulationBuildParams() {
   }
 }
 
+function captureControlState(): EditorControlState {
+  return {
+    pressure: getPressureValue(),
+    crownBias: getCrownBiasValue(),
+    pressureScale: getPressureScaleValue(),
+    pressureResponse: getPressureResponseValue(),
+    damping: getDampingValue(),
+    substeps: getSubstepsValue(),
+    constraintIterations: getConstraintIterationsValue(),
+    stiffness: getStiffnessValue(),
+    maxDeltaTime: getMaxDeltaTimeValue(),
+    subdivisionLevel: getSubdivisionLevelValue(),
+    meshDensity: getMeshDensityValue(),
+    useCornerAnchors: getCornerAnchorsEnabled(),
+    showBaseGrid,
+    showWireframe,
+    reflectionsEnabled,
+  }
+}
+
+function applyControlState(state: EditorControlState): void {
+  pressureSlider.value = `${state.pressure}`
+  crownBiasSlider.value = `${state.crownBias}`
+  pressureScaleSlider.value = `${state.pressureScale}`
+  pressureResponseSlider.value = `${state.pressureResponse}`
+  dampingSlider.value = `${state.damping}`
+  substepsSlider.value = `${state.substeps}`
+  constraintIterationsSlider.value = `${state.constraintIterations}`
+  stiffnessSlider.value = `${state.stiffness}`
+  maxDeltaTimeSlider.value = `${state.maxDeltaTime}`
+  subdivisionLevelSlider.value = `${state.subdivisionLevel}`
+  meshDensitySlider.value = `${state.meshDensity}`
+
+  useCornerAnchors = state.useCornerAnchors
+  cornerAnchorsToggle.checked = state.useCornerAnchors
+  showBaseGrid = state.showBaseGrid
+  baseGridToggle.checked = state.showBaseGrid
+  showWireframe = state.showWireframe
+  wireToggle.checked = state.showWireframe
+  reflectionsEnabled = state.reflectionsEnabled
+  reflectionToggle.checked = state.reflectionsEnabled
+}
+
+function captureEditorHistoryState(): EditorHistoryState {
+  return {
+    outlinePoints: cloneOutlinePoints(outline.points),
+    outlineClosed: outline.closed,
+    nextPointId,
+    controls: captureControlState(),
+    simulationSnapshot: simulation?.captureSnapshot() ?? null,
+    solverRunning,
+  }
+}
+
+function getHistoryStateKey(state: EditorHistoryState): string {
+  return JSON.stringify({
+    outlinePoints: state.outlinePoints.map((point) => [point.id, point.position.x, point.position.y]),
+    outlineClosed: state.outlineClosed,
+    nextPointId: state.nextPointId,
+    controls: state.controls,
+    simulationSnapshot: state.simulationSnapshot,
+    solverRunning: state.solverRunning,
+  })
+}
+
+function commitEditorHistoryState(): void {
+  if (restoringHistory) {
+    return
+  }
+
+  const nextState = captureEditorHistoryState()
+  const nextKey = getHistoryStateKey(nextState)
+  const previousState = undoHistory[undoHistory.length - 1]
+  if (previousState && getHistoryStateKey(previousState) === nextKey) {
+    return
+  }
+
+  undoHistory.push(nextState)
+  if (undoHistory.length > MAX_EDITOR_HISTORY) {
+    undoHistory.shift()
+  }
+  redoHistory.splice(0, redoHistory.length)
+}
+
+function getSimulationTopologyKey(state: EditorHistoryState): string {
+  return JSON.stringify({
+    outlineClosed: state.outlineClosed,
+    outlinePoints: state.outlinePoints.map((point) => [point.id, point.position.x, point.position.y]),
+    meshDensity: state.controls.meshDensity,
+  })
+}
+
+function cloneSimulationSnapshot(snapshot: CanopySimulationSnapshot): CanopySimulationSnapshot {
+  return {
+    currentPressure: snapshot.currentPressure,
+    targetPressure: snapshot.targetPressure,
+    positions: snapshot.positions.map((position) => [...position] as [number, number, number]),
+    velocities: snapshot.velocities.map((velocity) => [...velocity] as [number, number, number]),
+    pinnedTargets: snapshot.pinnedTargets.map((target) => [...target] as [number, number, number]),
+    anchorIndices: [...snapshot.anchorIndices],
+  }
+}
+
+function shouldPreserveSimulationShape(
+  currentState: EditorHistoryState,
+  targetState: EditorHistoryState,
+): boolean {
+  return (
+    currentState.simulationSnapshot !== null &&
+    targetState.simulationSnapshot !== null &&
+    currentState.outlineClosed &&
+    targetState.outlineClosed &&
+    getSimulationTopologyKey(currentState) === getSimulationTopologyKey(targetState)
+  )
+}
+
+function mergeSimulationSnapshots(
+  currentSnapshot: CanopySimulationSnapshot,
+  targetSnapshot: CanopySimulationSnapshot,
+): CanopySimulationSnapshot {
+  const mergedSnapshot = cloneSimulationSnapshot(targetSnapshot)
+  mergedSnapshot.currentPressure = currentSnapshot.currentPressure
+  mergedSnapshot.positions = currentSnapshot.positions.map(
+    (position) => [...position] as [number, number, number],
+  )
+  mergedSnapshot.velocities = currentSnapshot.velocities.map(
+    (velocity) => [...velocity] as [number, number, number],
+  )
+
+  const pinnedAnchorSet = new Set(mergedSnapshot.anchorIndices)
+  for (const anchorIndex of mergedSnapshot.anchorIndices) {
+    mergedSnapshot.positions[anchorIndex] = [...mergedSnapshot.pinnedTargets[anchorIndex]] as [
+      number,
+      number,
+      number,
+    ]
+    mergedSnapshot.velocities[anchorIndex] = [0, 0, 0]
+  }
+
+  for (let index = 0; index < mergedSnapshot.velocities.length; index += 1) {
+    if (pinnedAnchorSet.has(index)) {
+      continue
+    }
+
+    mergedSnapshot.velocities[index] = [...currentSnapshot.velocities[index]] as [
+      number,
+      number,
+      number,
+    ]
+  }
+
+  return mergedSnapshot
+}
+
+function syncSimulationFromControls(): void {
+  if (!simulation) {
+    return
+  }
+
+  simulation.setPressureScale(getPressureScaleValue())
+  simulation.setCrownBias(getCrownBiasValue())
+  simulation.setPressureResponse(getPressureResponseValue())
+  simulation.setDamping(getDampingValue())
+  simulation.setSubsteps(getSubstepsValue())
+  simulation.setConstraintIterations(getConstraintIterationsValue())
+  simulation.setStiffness(getStiffnessValue())
+  simulation.setMaxDeltaTime(getMaxDeltaTimeValue())
+  simulation.setSubdivisionLevel(getSubdivisionLevelValue())
+  simulation.setPressure(getPressureValue())
+  simulation.setWireframeVisible(showWireframe)
+  simulation.setReflectionEnabled(reflectionsEnabled)
+}
+
+function restoreEditorHistoryState(state: EditorHistoryState): void {
+  const currentState = captureEditorHistoryState()
+  const shouldKeepSolverRunning = currentState.solverRunning
+  const preserveLiveSimulation =
+    simulation !== null && shouldPreserveSimulationShape(currentState, state)
+  restoringHistory = true
+
+  try {
+    controls.enabled = true
+    clearHandleInteraction()
+    hoveredAnchorIndex = null
+
+    applyControlState(state.controls)
+
+    outline = createEditableOutline()
+    outline.points = cloneOutlinePoints(state.outlinePoints)
+    outline.closed = state.outlineClosed
+    outline.selectedVertexId = null
+    outline.hoveredVertexId = null
+    nextPointId = state.nextPointId
+
+    if (preserveLiveSimulation) {
+      const snapshotToRestore = mergeSimulationSnapshots(
+        currentState.simulationSnapshot!,
+        state.simulationSnapshot!,
+      )
+      simulation!.restoreSnapshot(snapshotToRestore)
+      syncSimulationFromControls()
+    } else {
+      solverRunning = false
+      simulationAccumulator = 0
+      disposeSimulation()
+
+      if (outline.closed && outline.points.length >= 3) {
+        buildSimulation(false)
+        if (simulation && state.simulationSnapshot) {
+          simulation.restoreSnapshot(state.simulationSnapshot)
+          syncSimulationFromControls()
+        }
+      }
+    }
+
+    applyDisplayVisibilityState()
+    applyReflectionState()
+    solverRunning =
+      shouldKeepSolverRunning && simulation !== null && simulation.getPinnedCount() > 0
+    rebuildOutlineVisuals()
+    rebuildAnchorHandles()
+    refreshUiState()
+  } finally {
+    restoringHistory = false
+  }
+}
+
+function undoEditorHistory(): void {
+  if (undoHistory.length <= 1) {
+    return
+  }
+
+  const currentState = undoHistory.pop()
+  if (!currentState) {
+    return
+  }
+
+  redoHistory.push(currentState)
+  const previousState = undoHistory[undoHistory.length - 1]
+  if (previousState) {
+    restoreEditorHistoryState(previousState)
+  }
+}
+
+function redoEditorHistory(): void {
+  const nextState = redoHistory.pop()
+  if (!nextState) {
+    return
+  }
+
+  undoHistory.push(nextState)
+  restoreEditorHistoryState(nextState)
+}
+
 function updateRangeProgress(input: HTMLInputElement): void {
   const min = Number.parseFloat(input.min || '0')
   const max = Number.parseFloat(input.max || '1')
@@ -1037,6 +1324,7 @@ function addOutlinePoint(point: THREE.Vector3): void {
   outline.closed = false
   rebuildOutlineVisuals()
   refreshUiState()
+  commitEditorHistoryState()
 }
 
 function updateOutlinePoint(pointId: number, point: THREE.Vector3): void {
@@ -1099,6 +1387,7 @@ function closeOutline(): void {
   buildSimulation()
   solverRunning = false
   refreshUiState()
+  commitEditorHistoryState()
 }
 
 function disposeSimulation(): void {
@@ -1127,6 +1416,7 @@ function clearSceneState(): void {
   rebuildOutlineVisuals()
   rebuildAnchorHandles()
   refreshUiState()
+  commitEditorHistoryState()
 }
 
 function resetSimulationState(): void {
@@ -1142,6 +1432,7 @@ function resetSimulationState(): void {
   simulation.reset()
   rebuildAnchorHandles()
   refreshUiState()
+  commitEditorHistoryState()
 }
 
 function updatePressureLabel(): void {
@@ -1590,6 +1881,7 @@ function handleAnchorClick(anchorIndex: number, timeStamp: number): void {
   hoveredAnchorIndex = null
   rebuildAnchorHandles()
   refreshUiState()
+  commitEditorHistoryState()
 }
 
 startButton.addEventListener('click', toggleSolver)
@@ -1610,6 +1902,17 @@ stiffnessSlider.addEventListener('input', applyStiffnessValue)
 maxDeltaTimeSlider.addEventListener('input', applyMaxDeltaTimeValue)
 subdivisionLevelSlider.addEventListener('input', applySubdivisionLevelValue)
 meshDensitySlider.addEventListener('input', applyMeshDensityValue)
+pressureSlider.addEventListener('change', commitEditorHistoryState)
+crownBiasSlider.addEventListener('change', commitEditorHistoryState)
+pressureScaleSlider.addEventListener('change', commitEditorHistoryState)
+pressureResponseSlider.addEventListener('change', commitEditorHistoryState)
+dampingSlider.addEventListener('change', commitEditorHistoryState)
+substepsSlider.addEventListener('change', commitEditorHistoryState)
+constraintIterationsSlider.addEventListener('change', commitEditorHistoryState)
+stiffnessSlider.addEventListener('change', commitEditorHistoryState)
+maxDeltaTimeSlider.addEventListener('change', commitEditorHistoryState)
+subdivisionLevelSlider.addEventListener('change', commitEditorHistoryState)
+meshDensitySlider.addEventListener('change', commitEditorHistoryState)
 
 bindValueInput(pressureValue, pressureSlider, 56.55, applyPressureValue)
 bindValueInput(crownBiasValue, crownBiasSlider, 0.2, applyCrownBiasValue)
@@ -1635,6 +1938,7 @@ cornerAnchorsToggle.addEventListener('change', () => {
     stopSolverIfNoAnchors()
   }
   refreshUiState()
+  commitEditorHistoryState()
 })
 
 groundAnchorsButton.addEventListener('click', () => {
@@ -1645,6 +1949,7 @@ groundAnchorsButton.addEventListener('click', () => {
   simulation.groundPinnedVertices()
   rebuildAnchorHandles()
   refreshUiState()
+  commitEditorHistoryState()
 })
 
 clearAnchorsButton.addEventListener('click', () => {
@@ -1656,21 +1961,25 @@ clearAnchorsButton.addEventListener('click', () => {
   stopSolverIfNoAnchors()
   rebuildAnchorHandles()
   refreshUiState()
+  commitEditorHistoryState()
 })
 
 baseGridToggle.addEventListener('change', () => {
   showBaseGrid = baseGridToggle.checked
   applyDisplayVisibilityState()
+  commitEditorHistoryState()
 })
 
 wireToggle.addEventListener('change', () => {
   showWireframe = wireToggle.checked
   applyDisplayVisibilityState()
+  commitEditorHistoryState()
 })
 
 reflectionToggle.addEventListener('change', () => {
   reflectionsEnabled = reflectionToggle.checked
   applyReflectionState()
+  commitEditorHistoryState()
 })
 
 renderer.domElement.addEventListener('contextmenu', (event) => {
@@ -1844,6 +2153,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
     }
     draggingOutlinePointId = null
     controls.enabled = true
+    commitEditorHistoryState()
     return
   }
 
@@ -1855,6 +2165,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
     rebuildAnchorHandles()
     refreshUiState()
     controls.enabled = true
+    commitEditorHistoryState()
     return
   }
 
@@ -1886,6 +2197,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
       simulation.ensurePinnedVertex(pendingHandleClick.anchorIndex)
       rebuildAnchorHandles()
       refreshUiState()
+      commitEditorHistoryState()
     }
 
     pendingHandleClick = null
@@ -1953,7 +2265,26 @@ window.addEventListener('pointercancel', (event) => {
 })
 
 window.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' || event.repeat || isTypingInUi() || simulation) {
+  if (event.repeat) {
+    return
+  }
+
+  if (!isTypingInUi() && (event.ctrlKey || event.metaKey)) {
+    const normalizedKey = event.key.toLowerCase()
+    if (normalizedKey === 'z' && !event.shiftKey) {
+      event.preventDefault()
+      undoEditorHistory()
+      return
+    }
+
+    if (normalizedKey === 'y' || (normalizedKey === 'z' && event.shiftKey)) {
+      event.preventDefault()
+      redoEditorHistory()
+      return
+    }
+  }
+
+  if (event.key !== 'Enter' || isTypingInUi() || simulation) {
     return
   }
 
@@ -2011,6 +2342,7 @@ applyDisplayVisibilityState()
 applyReflectionState()
 refreshUiState()
 onResize()
+commitEditorHistoryState()
 
 requestAnimationFrame(() => {
   document.documentElement.classList.add('ui-ready')
