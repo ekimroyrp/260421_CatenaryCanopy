@@ -260,7 +260,7 @@ export class CanopySimulation {
   }
 
   setPressure(pressure: number): void {
-    this.state.targetPressure = THREE.MathUtils.clamp(pressure, 0, 5)
+    this.state.targetPressure = THREE.MathUtils.clamp(pressure, 0, 100)
   }
 
   reset(): void {

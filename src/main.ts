@@ -60,19 +60,12 @@ app.innerHTML = `
               <button id="startButton" class="pill-button action-button is-start-state" type="button">Start</button>
               <button id="resetButton" class="pill-button reset-button" type="button">Reset</button>
             </div>
-            <label class="control" for="speedSlider">
-              <div class="control-row">
-                <span>Speed</span>
-                <span id="speed-value" class="value-pill">1.00x</span>
-              </div>
-              <input id="speedSlider" type="range" min="0.1" max="4" value="1" step="0.01" />
-            </label>
             <label class="control" for="pressureSlider">
               <div class="control-row">
                 <span>Pressure</span>
                 <span id="pressure-value" class="value-pill">0.42</span>
               </div>
-              <input id="pressureSlider" type="range" min="0" max="5" value="0.42" step="0.01" />
+              <input id="pressureSlider" type="range" min="0" max="100" value="0.42" step="0.01" />
             </label>
           </div>
         </section>
@@ -235,8 +228,6 @@ const resetButton = requireElement<HTMLButtonElement>('#resetButton')
 const exportObjButton = requireElement<HTMLButtonElement>('#exportObjButton')
 const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
-const speedSlider = requireElement<HTMLInputElement>('#speedSlider')
-const speedValue = requireElement<HTMLSpanElement>('#speed-value')
 const pressureSlider = requireElement<HTMLInputElement>('#pressureSlider')
 const pressureValue = requireElement<HTMLSpanElement>('#pressure-value')
 const anchorCountValue = requireElement<HTMLSpanElement>('#anchor-count-value')
@@ -388,6 +379,8 @@ const clock = new THREE.Clock()
 const CLICK_DRAG_THRESHOLD = 6
 const MIN_OUTLINE_SEGMENT_LENGTH = 0.06
 const EXPORT_BASE_NAME = '260421_CatenaryCanopy'
+const FIXED_SIMULATION_STEP = 1 / 60
+const MAX_SIMULATION_STEPS_PER_FRAME = 8
 const panelDragOffset = { x: 0, y: 0 }
 const exportCounters = {
   obj: 0,
@@ -400,6 +393,7 @@ let outline: EditableOutline = createEditableOutline()
 let simulation: CanopySimulation | null = null
 let outlineLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
 let solverRunning = false
+let simulationAccumulator = 0
 let draggingPanel = false
 let pendingHandleClick: PendingHandleClick | null = null
 let draggingOutlinePointId: number | null = null
@@ -524,10 +518,6 @@ function pickAnchorHandle(clientX: number, clientY: number): THREE.Intersection<
   return raycaster.intersectObjects(anchorHandleGroup.children, false)[0] ?? null
 }
 
-function getSpeedValue(): number {
-  return Number.parseFloat(speedSlider.value) || 1
-}
-
 function getPressureValue(): number {
   return Number.parseFloat(pressureSlider.value) || 0
 }
@@ -572,6 +562,7 @@ function buildSimulation(): void {
   simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), {
     pressure: getPressureValue(),
   })
+  simulationAccumulator = 0
   simulation.setWireframeVisible(showWireframe)
   simulation.setReflectionEnabled(reflectionsEnabled)
   scene.add(simulation.mesh)
@@ -602,6 +593,7 @@ function disposeSimulation(): void {
     return
   }
 
+  simulationAccumulator = 0
   scene.remove(simulation.mesh)
   simulation.dispose()
   simulation = null
@@ -615,6 +607,7 @@ function resetSimulationState(): void {
   }
 
   solverRunning = false
+  simulationAccumulator = 0
   pendingHandleClick = null
   draggingOutlinePointId = null
   draggingAnchorIndex = null
@@ -623,18 +616,12 @@ function resetSimulationState(): void {
   refreshUiState()
 }
 
-function updateSpeedLabel(): void {
-  speedValue.textContent = `${getSpeedValue().toFixed(2)}x`
-  updateRangeProgress(speedSlider)
-}
-
 function updatePressureLabel(): void {
   pressureValue.textContent = getPressureValue().toFixed(2)
   updateRangeProgress(pressureSlider)
 }
 
 function refreshUiState(): void {
-  updateSpeedLabel()
   updatePressureLabel()
 
   const anchorCount = simulation?.getPinnedCount() ?? 0
@@ -701,6 +688,7 @@ function toggleSolver(): void {
   }
 
   solverRunning = !solverRunning
+  simulationAccumulator = 0
   refreshUiState()
 }
 
@@ -927,8 +915,6 @@ resetButton.addEventListener('click', resetSimulationState)
 exportObjButton.addEventListener('click', exportObj)
 exportGlbButton.addEventListener('click', exportGlb)
 exportScreenshotButton.addEventListener('click', exportScreenshot)
-
-speedSlider.addEventListener('input', updateSpeedLabel)
 
 pressureSlider.addEventListener('input', () => {
   updatePressureLabel()
@@ -1206,7 +1192,21 @@ function animate(): void {
 
   if (simulation && solverRunning) {
     simulation.setPressure(getPressureValue())
-    simulation.update(deltaTime * getSpeedValue())
+    simulationAccumulator += deltaTime
+    const maxAccumulatedTime = FIXED_SIMULATION_STEP * MAX_SIMULATION_STEPS_PER_FRAME
+    simulationAccumulator = Math.min(simulationAccumulator, maxAccumulatedTime)
+
+    let stepCount = 0
+    while (
+      simulationAccumulator >= FIXED_SIMULATION_STEP &&
+      stepCount < MAX_SIMULATION_STEPS_PER_FRAME
+    ) {
+      simulation.update(FIXED_SIMULATION_STEP)
+      simulationAccumulator -= FIXED_SIMULATION_STEP
+      stepCount += 1
+    }
+  } else {
+    simulationAccumulator = 0
   }
 
   renderer.render(scene, camera)
@@ -1214,7 +1214,6 @@ function animate(): void {
 
 rebuildOutlineVisuals()
 bindSectionCollapses()
-updateSpeedLabel()
 updatePressureLabel()
 applyDisplayVisibilityState()
 applyReflectionState()

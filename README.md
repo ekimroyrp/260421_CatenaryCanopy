@@ -10,8 +10,7 @@
 - Single-surface inflation solver with no simulated or rendered bottom sheet
 - Corner-only anchor workflow where the outline corners become the fixed supports automatically
 - Vertical corner-anchor dragging for fast support-height adjustments
-- Pressure-driven canopy shaping with live `Pressure` control from `0` to `5`
-- Simulation speed control for slowing down or accelerating the live inflation playback
+- Pressure-driven canopy shaping with live `Pressure` control from `0` to `100`
 - Smoothed render surface with wire overlay and foil material toggle
 - OBJ export, GLB export, and screenshot export
 
@@ -32,8 +31,7 @@
 - `LMB + Drag` on a corner anchor handle moves that anchor vertically
 - `Start / Pause` runs or pauses the live inflation solve
 - `Reset` rewinds the current simulation while keeping the existing outline, mesh, and corner anchors
-- `Speed` changes how fast the live simulation advances
-- `Pressure` changes the inflation force from `0` to `5`
+- `Pressure` changes the inflation force from `0` to `100`
 - `Base Grid`, `Mesh Wires`, and `Foil Material` toggle display layers
 - `Mouse Wheel` zooms, `MMB` pans, and `RMB` orbits
 - `Export OBJ`, `Export GLB`, and `Export Screenshot` save the current result
