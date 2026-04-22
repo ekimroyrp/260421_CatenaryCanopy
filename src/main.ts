@@ -21,10 +21,14 @@ interface PendingHandleClick {
   pointerId: number
   clientX: number
   clientY: number
-  type: 'outline' | 'anchor'
+  type: 'outline' | 'anchor' | 'vertex'
   pointId?: number
   anchorIndex?: number
   canClose?: boolean
+}
+
+interface AnchorSnapshot {
+  position: THREE.Vector3
 }
 
 document.title = '260421_CatenaryCanopy'
@@ -63,16 +67,16 @@ app.innerHTML = `
             <label class="control" for="pressureSlider">
               <div class="control-row">
                 <span>Pressure</span>
-                <span id="pressure-value" class="value-pill">0.42</span>
+                <span id="pressure-value" class="value-pill">56.55</span>
               </div>
-              <input id="pressureSlider" type="range" min="0" max="100" value="0.42" step="0.01" />
+              <input id="pressureSlider" type="range" min="0" max="100" value="56.55" step="0.01" />
             </label>
             <label class="control" for="crownBiasSlider">
               <div class="control-row">
                 <span>Crown Bias</span>
-                <span id="crown-bias-value" class="value-pill">0.00</span>
+                <span id="crown-bias-value" class="value-pill">4.00</span>
               </div>
-              <input id="crownBiasSlider" type="range" min="0" max="4" value="0" step="0.01" />
+              <input id="crownBiasSlider" type="range" min="0" max="4" value="4" step="0.01" />
             </label>
             <label class="control" for="pressureScaleSlider">
               <div class="control-row">
@@ -91,9 +95,9 @@ app.innerHTML = `
             <label class="control" for="dampingSlider">
               <div class="control-row">
                 <span>Damping</span>
-                <span id="damping-value" class="value-pill">4.20</span>
+                <span id="damping-value" class="value-pill">4.80</span>
               </div>
-              <input id="dampingSlider" type="range" min="0" max="40" value="4.2" step="0.1" />
+              <input id="dampingSlider" type="range" min="0" max="40" value="4.8" step="0.1" />
             </label>
             <label class="control" for="substepsSlider">
               <div class="control-row">
@@ -112,16 +116,16 @@ app.innerHTML = `
             <label class="control" for="stiffnessSlider">
               <div class="control-row">
                 <span>Stiffness</span>
-                <span id="stiffness-value" class="value-pill">0.76</span>
+                <span id="stiffness-value" class="value-pill">0.19</span>
               </div>
-              <input id="stiffnessSlider" type="range" min="0" max="2" value="0.76" step="0.01" />
+              <input id="stiffnessSlider" type="range" min="0" max="2" value="0.19" step="0.01" />
             </label>
             <label class="control" for="maxDeltaTimeSlider">
               <div class="control-row">
                 <span>Max Delta Time</span>
-                <span id="max-delta-time-value" class="value-pill">0.0417 s</span>
+                <span id="max-delta-time-value" class="value-pill">0.0320 s</span>
               </div>
-              <input id="maxDeltaTimeSlider" type="range" min="0.004" max="0.2" value="0.041667" step="0.001" />
+              <input id="maxDeltaTimeSlider" type="range" min="0.004" max="0.2" value="0.032" step="0.001" />
             </label>
             <label class="control" for="subdivisionLevelSlider">
               <div class="control-row">
@@ -145,12 +149,13 @@ app.innerHTML = `
           </button>
           <div class="panel-section-content panel-controls-stack">
             <div class="control-hint">
-              Outline corners become the fixed anchors.<br />
+              Outline corners start as anchors.<br />
+              LMB Mesh Vert = Add Anchor<br />
               LMB+Drag Anchor = Raise or Lower
             </div>
             <div class="control">
               <div class="control-row">
-                <span>Corner Anchors</span>
+                <span>Anchors</span>
                 <span id="anchor-count-value" class="value-pill">0</span>
               </div>
             </div>
@@ -460,6 +465,7 @@ const outlineLineMaterial = new THREE.LineBasicMaterial({ color: 0xf3f7fb })
 const invalidOutlineLineMaterial = new THREE.LineBasicMaterial({ color: 0xe05a78 })
 
 const raycaster = new THREE.Raycaster()
+raycaster.params.Points.threshold = 0.18
 const drawPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 const anchorDragPlane = new THREE.Plane()
 const pointer = new THREE.Vector2()
@@ -608,48 +614,100 @@ function pickAnchorHandle(clientX: number, clientY: number): THREE.Intersection<
   return raycaster.intersectObjects(anchorHandleGroup.children, false)[0] ?? null
 }
 
+function pickMeshVertex(clientX: number, clientY: number): number | null {
+  if (!simulation) {
+    return null
+  }
+
+  updatePointer(clientX, clientY)
+  raycaster.setFromCamera(pointer, camera)
+  const hit = raycaster.intersectObject(simulation.vertexDots, false)[0]
+  return typeof hit?.index === 'number' ? hit.index : null
+}
+
+function readSliderNumber(input: HTMLInputElement, fallback: number): number {
+  const value = Number.parseFloat(input.value)
+  return Number.isFinite(value) ? value : fallback
+}
+
+function captureAnchorSnapshots(): AnchorSnapshot[] {
+  return simulation?.getAnchorVertices().map((anchor) => ({
+    position: anchor.position.clone(),
+  })) ?? []
+}
+
+function findNearestFlatVertexIndex(
+  targetPosition: THREE.Vector3,
+  usedIndices: ReadonlySet<number>,
+): number {
+  if (!simulation) {
+    return -1
+  }
+
+  let nearestIndex = -1
+  let nearestDistanceSquared = Number.POSITIVE_INFINITY
+
+  for (let index = 0; index < simulation.flatMesh.vertices.length; index += 1) {
+    if (usedIndices.has(index)) {
+      continue
+    }
+
+    const vertex = simulation.flatMesh.vertices[index]
+    const deltaX = vertex.x - targetPosition.x
+    const deltaZ = vertex.y - targetPosition.z
+    const distanceSquared = deltaX * deltaX + deltaZ * deltaZ
+
+    if (distanceSquared < nearestDistanceSquared) {
+      nearestDistanceSquared = distanceSquared
+      nearestIndex = index
+    }
+  }
+
+  return nearestIndex
+}
+
 function getPressureValue(): number {
-  return Number.parseFloat(pressureSlider.value) || 0
+  return readSliderNumber(pressureSlider, 56.55)
 }
 
 function getCrownBiasValue(): number {
-  return Number.parseFloat(crownBiasSlider.value) || 0
+  return readSliderNumber(crownBiasSlider, 4)
 }
 
 function getPressureScaleValue(): number {
-  return Number.parseFloat(pressureScaleSlider.value) || 26
+  return readSliderNumber(pressureScaleSlider, 26)
 }
 
 function getPressureResponseValue(): number {
-  return Number.parseFloat(pressureResponseSlider.value) || 1.9
+  return readSliderNumber(pressureResponseSlider, 1.9)
 }
 
 function getDampingValue(): number {
-  return Number.parseFloat(dampingSlider.value) || 4.2
+  return readSliderNumber(dampingSlider, 4.8)
 }
 
 function getSubstepsValue(): number {
-  return Math.max(1, Math.round(Number.parseFloat(substepsSlider.value) || 5))
+  return Math.max(1, Math.round(readSliderNumber(substepsSlider, 5)))
 }
 
 function getConstraintIterationsValue(): number {
-  return Math.max(1, Math.round(Number.parseFloat(constraintIterationsSlider.value) || 10))
+  return Math.max(1, Math.round(readSliderNumber(constraintIterationsSlider, 10)))
 }
 
 function getStiffnessValue(): number {
-  return Number.parseFloat(stiffnessSlider.value) || 0.76
+  return readSliderNumber(stiffnessSlider, 0.19)
 }
 
 function getMaxDeltaTimeValue(): number {
-  return Number.parseFloat(maxDeltaTimeSlider.value) || 1 / 24
+  return readSliderNumber(maxDeltaTimeSlider, 0.032)
 }
 
 function getSubdivisionLevelValue(): number {
-  return Math.max(0, Math.round(Number.parseFloat(subdivisionLevelSlider.value) || 1))
+  return Math.max(0, Math.round(readSliderNumber(subdivisionLevelSlider, 1)))
 }
 
 function getMeshDensityValue(): number {
-  return Number.parseFloat(meshDensitySlider.value) || 1
+  return readSliderNumber(meshDensitySlider, 1)
 }
 
 function getSimulationBuildParams() {
@@ -704,20 +762,23 @@ function updateOutlinePoint(pointId: number, point: THREE.Vector3): void {
 }
 
 function buildSimulation(preserveAnchorHeights = false): void {
-  const previousAnchorHeights =
-    preserveAnchorHeights && simulation
-      ? simulation.getAnchorVertices().map((anchor) => anchor.position.y)
-      : []
+  const previousAnchorSnapshots = preserveAnchorHeights ? captureAnchorSnapshots() : []
   disposeSimulation()
   simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), getSimulationBuildParams())
   simulationAccumulator = 0
   simulation.setWireframeVisible(showWireframe)
   simulation.setReflectionEnabled(reflectionsEnabled)
   scene.add(simulation.mesh)
-  if (previousAnchorHeights.length > 0) {
-    const nextAnchors = simulation.getAnchorVertices()
-    for (let index = 0; index < Math.min(previousAnchorHeights.length, nextAnchors.length); index += 1) {
-      simulation.setPinnedVertexDisplayHeight(nextAnchors[index].index, previousAnchorHeights[index])
+  if (previousAnchorSnapshots.length > 0) {
+    const usedIndices = new Set<number>()
+    for (const snapshot of previousAnchorSnapshots) {
+      const nearestIndex = findNearestFlatVertexIndex(snapshot.position, usedIndices)
+      if (nearestIndex < 0) {
+        continue
+      }
+
+      usedIndices.add(nearestIndex)
+      simulation.ensurePinnedVertex(nearestIndex, snapshot.position.y)
     }
   }
   rebuildOutlineVisuals()
@@ -856,12 +917,12 @@ function refreshUiState(): void {
   }
 
   if (solverRunning) {
-    statusText.textContent = 'Inflating. Drag corner anchors vertically to reshape the canopy.'
+    statusText.textContent = 'Inflating. Click mesh verts to add anchors, or drag an anchor vertically.'
     return
   }
 
   statusText.textContent =
-    'Corners are fixed anchors. Press Start to inflate, or drag an anchor to change its height.'
+    'Corners start anchored. Click mesh verts to add more anchors, then drag any anchor to change height.'
 }
 
 function applyDisplayVisibilityState(): void {
@@ -1256,6 +1317,20 @@ renderer.domElement.addEventListener(
         return
       }
 
+      const meshVertexIndex = pickMeshVertex(event.clientX, event.clientY)
+      if (meshVertexIndex !== null) {
+        pendingHandleClick = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          type: 'vertex',
+          anchorIndex: meshVertexIndex,
+        }
+        renderer.domElement.setPointerCapture(event.pointerId)
+        event.stopPropagation()
+        return
+      }
+
       controls.enabled = true
       return
     }
@@ -1305,11 +1380,18 @@ renderer.domElement.addEventListener('pointermove', (event) => {
     if (dragDistance > CLICK_DRAG_THRESHOLD) {
       if (pendingHandleClick.type === 'outline') {
         draggingOutlinePointId = pendingHandleClick.pointId ?? null
-      } else {
+      } else if (pendingHandleClick.type === 'anchor') {
         draggingAnchorIndex = pendingHandleClick.anchorIndex ?? null
         if (draggingAnchorIndex !== null) {
           beginAnchorDrag(draggingAnchorIndex)
         }
+      } else {
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId)
+        }
+        pendingHandleClick = null
+        controls.enabled = true
+        return
       }
       pendingHandleClick = null
     } else {
@@ -1371,6 +1453,15 @@ renderer.domElement.addEventListener('pointerup', (event) => {
 
     if (dragDistance <= CLICK_DRAG_THRESHOLD && pendingHandleClick.type === 'outline' && pendingHandleClick.canClose) {
       closeOutline()
+    } else if (
+      dragDistance <= CLICK_DRAG_THRESHOLD &&
+      pendingHandleClick.type === 'vertex' &&
+      simulation &&
+      pendingHandleClick.anchorIndex !== undefined
+    ) {
+      simulation.ensurePinnedVertex(pendingHandleClick.anchorIndex)
+      rebuildAnchorHandles()
+      refreshUiState()
     }
 
     pendingHandleClick = null

@@ -81,20 +81,22 @@ export interface CanopySimulationState {
 }
 
 const DEFAULT_PARAMS: CanopySimulationParams = {
-  pressure: 0.42,
-  crownBias: 0,
+  pressure: 56.55,
+  crownBias: 4,
   pressureScale: 26,
   pressureResponse: 1.9,
-  damping: 4.2,
+  damping: 4.8,
   substeps: 5,
   constraintIterations: 10,
-  stiffness: 0.76,
-  maxDeltaTime: 1 / 24,
+  stiffness: 0.19,
+  maxDeltaTime: 0.032,
   displaySubdivisionLevel: 1,
   meshDensity: 1,
 }
 
 const WIRE_SURFACE_OFFSET = 0.008
+const FREE_VERTEX_COLOR = new THREE.Color(0xdbe2f0)
+const PINNED_VERTEX_COLOR = new THREE.Color(0xffd47a)
 const FOIL_MATERIAL_STYLE: CanopyMaterialStyle = {
   color: 0xf1f5ff,
   metalness: 1,
@@ -137,6 +139,7 @@ export class CanopySimulation {
   readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>
   readonly flatMesh: FlatMeshData
   readonly state: CanopySimulationState
+  readonly vertexDots: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>
 
   private displaySubdivisionLevel: number
   private readonly params: CanopySimulationParams
@@ -247,6 +250,33 @@ export class CanopySimulation {
     this.wireOverlay.frustumCulled = false
     this.wireOverlay.renderOrder = 3
     this.mesh.add(this.wireOverlay)
+
+    const vertexDotsGeometry = new THREE.BufferGeometry()
+    vertexDotsGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(this.state.positions.length * 3), 3),
+    )
+    vertexDotsGeometry.setAttribute(
+      'color',
+      new THREE.BufferAttribute(new Float32Array(this.state.positions.length * 3), 3),
+    )
+    this.vertexDots = new THREE.Points(
+      vertexDotsGeometry,
+      new THREE.PointsMaterial({
+        size: 0.06,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.68,
+        depthWrite: false,
+        toneMapped: false,
+        sizeAttenuation: true,
+      }),
+    )
+    this.vertexDots.frustumCulled = false
+    this.vertexDots.renderOrder = 4
+    this.vertexDots.userData.simulation = this
+    this.mesh.add(this.vertexDots)
+
     this.mesh.castShadow = true
     this.mesh.receiveShadow = false
     this.mesh.userData.simulation = this
@@ -344,6 +374,31 @@ export class CanopySimulation {
     return target.copy(this.state.positions[index])
   }
 
+  isPinnedVertex(index: number): boolean {
+    return index >= 0 && index < this.pinnedMask.length && this.pinnedMask[index]
+  }
+
+  ensurePinnedVertex(index: number, displayHeight = this.state.positions[index]?.y ?? 0): boolean {
+    if (index < 0 || index >= this.state.positions.length) {
+      return false
+    }
+
+    if (!this.pinnedMask[index]) {
+      this.pinnedMask[index] = true
+      this.state.anchorIndices.push(index)
+      this.state.anchorIndices.sort((indexA, indexB) => indexA - indexB)
+    }
+
+    const restPosition = this.state.basePositions[index]
+    const nextTarget = this.state.pinnedTargets[index]
+    nextTarget.set(restPosition.x, THREE.MathUtils.clamp(displayHeight, -20, 20), restPosition.z)
+    this.state.positions[index].copy(nextTarget)
+    this.previousPositions[index].copy(nextTarget)
+    this.state.velocities[index].set(0, 0, 0)
+    this.syncGeometry()
+    return true
+  }
+
   setPinnedVertexDisplayHeight(index: number, displayHeight: number): void {
     if (!this.pinnedMask[index]) {
       return
@@ -382,6 +437,8 @@ export class CanopySimulation {
     this.mesh.material.dispose()
     this.wireOverlay.geometry.dispose()
     this.wireOverlay.material.dispose()
+    this.vertexDots.geometry.dispose()
+    this.vertexDots.material.dispose()
   }
 
   private step(deltaTime: number): void {
@@ -709,6 +766,15 @@ diffuseColor.rgb = applyEggIridescence(diffuseColor.rgb);`,
       positionAttribute.setXYZ(index, x, y, z)
     }
 
+    for (let index = 0; index < this.state.positions.length; index += 1) {
+      if (!this.pinnedMask[index]) {
+        continue
+      }
+
+      const pinnedPosition = this.state.positions[index]
+      positionAttribute.setXYZ(index, pinnedPosition.x, pinnedPosition.y, pinnedPosition.z)
+    }
+
     positionAttribute.needsUpdate = true
     this.state.geometry.computeVertexNormals()
     this.state.geometry.computeBoundingSphere()
@@ -735,6 +801,22 @@ diffuseColor.rgb = applyEggIridescence(diffuseColor.rgb);`,
 
     wirePositionAttribute.needsUpdate = true
     this.wireOverlay.geometry.computeBoundingSphere()
+
+    const vertexPositionAttribute = this.vertexDots.geometry.getAttribute(
+      'position',
+    ) as THREE.BufferAttribute
+    const vertexColorAttribute = this.vertexDots.geometry.getAttribute('color') as THREE.BufferAttribute
+
+    for (let index = 0; index < this.state.positions.length; index += 1) {
+      const position = this.state.positions[index]
+      const color = this.pinnedMask[index] ? PINNED_VERTEX_COLOR : FREE_VERTEX_COLOR
+      vertexPositionAttribute.setXYZ(index, position.x, position.y, position.z)
+      vertexColorAttribute.setXYZ(index, color.r, color.g, color.b)
+    }
+
+    vertexPositionAttribute.needsUpdate = true
+    vertexColorAttribute.needsUpdate = true
+    this.vertexDots.geometry.computeBoundingSphere()
   }
 }
 
