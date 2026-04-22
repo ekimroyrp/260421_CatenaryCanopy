@@ -7,9 +7,10 @@
 - Floating Apple-style control panel, studio-light environment, and fading base grid adapted from the reference Three.js project
 - Single closed-outline authoring workflow with click-to-place corners, point dragging, and Enter or start-point closure
 - Automatic interior mesh generation from the outline using adaptive Delaunay triangulation
-- Vertex-level anchor editing where any mesh vertex can be pinned or unpinned
+- Visible mesh-point anchor editing where any mesh vertex can be pinned or unpinned
 - Vertical anchor dragging for fast support-height adjustments
-- Live hanging-mesh relaxation solver with gravity control defaulting to `9.81 m/s²`
+- Live hanging-mesh relaxation solver with gravity control defaulting to `9.81 m/s^2`
+- Spring-length slack control for adding more sag and reducing the overly taut membrane look
 - Inverted display of the hanging solve so the visible result matches funicular canopy references
 - Wire overlay, foil material toggle, OBJ export, GLB export, and screenshot export
 
@@ -26,11 +27,12 @@
 - `LMB` on the ground places outline points
 - Click the first outline point or press `Enter` to close the outline
 - `LMB + Drag` on an outline point moves it before meshing
-- `LMB` on a mesh vertex toggles it as an anchor
+- `LMB` on a visible mesh point toggles it as an anchor
 - `LMB + Drag` on an anchored handle moves that anchor vertically
 - `Start / Pause` runs or pauses the live catenary relaxation
 - `Reset` clears the current canopy and returns to outline drawing
-- `Gravity` changes the solver acceleration in `m/s²`
+- `Gravity` changes the solver acceleration in `m/s^2`
+- `Spring Length` increases or decreases mesh slack to make the canopy hang softer or tighter
 - `Base Grid`, `Mesh Wires`, and `Foil Material` toggle display layers
 - `Mouse Wheel` zooms, `MMB` pans, and `RMB` orbits
 - `Export OBJ`, `Export GLB`, and `Export Screenshot` save the current result

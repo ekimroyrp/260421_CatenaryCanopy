@@ -63,9 +63,16 @@ app.innerHTML = `
             <label class="control" for="gravitySlider">
               <div class="control-row">
                 <span>Gravity</span>
-                <span id="gravity-value" class="value-pill">9.81 m/s²</span>
+                <span id="gravity-value" class="value-pill">9.81 m/s^2</span>
               </div>
               <input id="gravitySlider" type="range" min="0" max="20" value="9.81" step="0.01" />
+            </label>
+            <label class="control" for="springLengthSlider">
+              <div class="control-row">
+                <span>Spring Length</span>
+                <span id="spring-length-value" class="value-pill">1.08x</span>
+              </div>
+              <input id="springLengthSlider" type="range" min="1" max="1.35" value="1.08" step="0.005" />
             </label>
           </div>
         </section>
@@ -235,6 +242,8 @@ const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
 const gravitySlider = requireElement<HTMLInputElement>('#gravitySlider')
 const gravityValue = requireElement<HTMLSpanElement>('#gravity-value')
+const springLengthSlider = requireElement<HTMLInputElement>('#springLengthSlider')
+const springLengthValue = requireElement<HTMLSpanElement>('#spring-length-value')
 const anchorCountValue = requireElement<HTMLSpanElement>('#anchor-count-value')
 const baseGridToggle = requireElement<HTMLInputElement>('#baseGridToggle')
 const wireToggle = requireElement<HTMLInputElement>('#wireToggle')
@@ -551,6 +560,10 @@ function getGravityValue(): number {
   return Number.parseFloat(gravitySlider.value)
 }
 
+function getSpringLengthValue(): number {
+  return Number.parseFloat(springLengthSlider.value)
+}
+
 function updateRangeProgress(input: HTMLInputElement): void {
   const min = Number.parseFloat(input.min || '0')
   const max = Number.parseFloat(input.max || '1')
@@ -590,6 +603,7 @@ function buildSimulation(): void {
   disposeSimulation()
   simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), {
     gravity: getGravityValue(),
+    restLengthScale: getSpringLengthValue(),
   })
   simulation.setWireframeVisible(showWireframe)
   simulation.setReflectionEnabled(reflectionsEnabled)
@@ -612,7 +626,7 @@ function closeOutline(): void {
 
   outline.closed = true
   outline.valid = true
-  outline.error = 'Mesh generated. Click vertices to pin anchors.'
+  outline.error = 'Mesh generated. Click mesh points to pin anchors.'
   rebuildOutlineVisuals()
   buildSimulation()
   solverRunning = false
@@ -648,12 +662,18 @@ function resetEditor(): void {
 }
 
 function updateGravityLabel(): void {
-  gravityValue.textContent = `${getGravityValue().toFixed(2)} m/s²`
+  gravityValue.textContent = `${getGravityValue().toFixed(2)} m/s^2`
   updateRangeProgress(gravitySlider)
+}
+
+function updateSpringLengthLabel(): void {
+  springLengthValue.textContent = `${getSpringLengthValue().toFixed(2)}x`
+  updateRangeProgress(springLengthSlider)
 }
 
 function refreshUiState(): void {
   updateGravityLabel()
+  updateSpringLengthLabel()
 
   const anchorCount = simulation?.getPinnedCount() ?? 0
   anchorCountValue.textContent = `${anchorCount}`
@@ -674,7 +694,7 @@ function refreshUiState(): void {
   }
 
   if (anchorCount === 0) {
-    statusText.textContent = 'Mesh generated. Click vertices to pin anchors, then press Start.'
+    statusText.textContent = 'Mesh generated. Click mesh points to pin anchors, then press Start.'
     return
   }
 
@@ -683,7 +703,7 @@ function refreshUiState(): void {
     return
   }
 
-  statusText.textContent = 'Anchors are set. Press Start to relax or drag anchors to adjust support heights.'
+  statusText.textContent = 'Anchors are set. Press Start, drag anchors, or increase Spring Length for more sag.'
 }
 
 function applyDisplayVisibilityState(): void {
@@ -957,7 +977,28 @@ exportScreenshotButton.addEventListener('click', exportScreenshot)
 
 gravitySlider.addEventListener('input', () => {
   updateGravityLabel()
-  simulation?.setGravity(getGravityValue())
+  if (!simulation) {
+    return
+  }
+
+  simulation.setGravity(getGravityValue())
+  if (!solverRunning && simulation.getPinnedCount() > 0) {
+    simulation.settle(10)
+    rebuildAnchorHandles()
+  }
+})
+
+springLengthSlider.addEventListener('input', () => {
+  updateSpringLengthLabel()
+  if (!simulation) {
+    return
+  }
+
+  simulation.setRestLengthScale(getSpringLengthValue())
+  if (!solverRunning && simulation.getPinnedCount() > 0) {
+    simulation.settle(10)
+    rebuildAnchorHandles()
+  }
 })
 
 baseGridToggle.addEventListener('change', () => {
@@ -1031,6 +1072,7 @@ renderer.domElement.addEventListener(
         if (simulation.getPinnedCount() === 0) {
           solverRunning = false
         }
+        updateHoverMarkerPosition()
         rebuildAnchorHandles()
         refreshUiState()
         controls.enabled = true
@@ -1114,6 +1156,9 @@ renderer.domElement.addEventListener('pointermove', (event) => {
     const intersection = new THREE.Vector3()
     if (raycaster.ray.intersectPlane(anchorDragPlane, intersection)) {
       simulation.setPinnedVertexDisplayHeight(draggingAnchorIndex, intersection.y)
+      if (!solverRunning && simulation.getPinnedCount() > 0) {
+        simulation.settle(4)
+      }
       rebuildAnchorHandles()
       updateHoverMarkerPosition()
     }
@@ -1274,6 +1319,7 @@ function animate(): void {
 rebuildOutlineVisuals()
 bindSectionCollapses()
 updateGravityLabel()
+updateSpringLengthLabel()
 applyDisplayVisibilityState()
 applyReflectionState()
 refreshUiState()

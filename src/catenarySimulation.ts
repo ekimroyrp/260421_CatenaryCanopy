@@ -10,6 +10,7 @@ import {
 interface SpringConstraint {
   a: number
   b: number
+  baseLength: number
   restLength: number
   stiffness: number
 }
@@ -45,6 +46,8 @@ export interface CanopySimulationParams {
   substeps: number
   constraintIterations: number
   stiffness: number
+  restLengthScale: number
+  compressionResistance: number
   maxDeltaTime: number
   pointPickSize: number
 }
@@ -66,12 +69,15 @@ const DEFAULT_PARAMS: CanopySimulationParams = {
   damping: 4.2,
   substeps: 4,
   constraintIterations: 10,
-  stiffness: 0.96,
+  stiffness: 0.92,
+  restLengthScale: 1.08,
+  compressionResistance: 0.18,
   maxDeltaTime: 1 / 24,
   pointPickSize: 0.14,
 }
 
 const WIRE_SURFACE_OFFSET = 0.004
+const VERTEX_SURFACE_OFFSET = 0.014
 const FOIL_MATERIAL_STYLE: CanopyMaterialStyle = {
   color: 0xf1f5ff,
   metalness: 1,
@@ -152,6 +158,7 @@ export class CanopySimulation {
       this.flatMesh.triangles,
       restPositions,
       this.params.stiffness,
+      this.params.restLengthScale,
     )
 
     const geometry = new THREE.BufferGeometry()
@@ -237,14 +244,17 @@ export class CanopySimulation {
     this.pickPoints = new THREE.Points(
       pickGeometry,
       new THREE.PointsMaterial({
-        size: this.params.pointPickSize,
+        size: this.params.pointPickSize * 0.72,
         sizeAttenuation: true,
+        color: 0xd8ebff,
         transparent: true,
-        opacity: 0.001,
+        opacity: 0.44,
         depthWrite: false,
+        toneMapped: false,
       }),
     )
     this.pickPoints.frustumCulled = false
+    this.pickPoints.renderOrder = 2
 
     this.syncGeometry()
   }
@@ -263,6 +273,13 @@ export class CanopySimulation {
     this.syncGeometry()
   }
 
+  settle(frames = 8, deltaTime = 1 / 60): void {
+    const safeFrames = Math.max(1, Math.round(frames))
+    for (let frame = 0; frame < safeFrames; frame += 1) {
+      this.update(deltaTime)
+    }
+  }
+
   reset(): void {
     for (let index = 0; index < this.state.positions.length; index += 1) {
       this.state.positions[index].copy(this.state.restPositions[index])
@@ -277,6 +294,14 @@ export class CanopySimulation {
 
   setGravity(gravity: number): void {
     this.state.gravity = Math.max(0, gravity)
+  }
+
+  setRestLengthScale(scale: number): void {
+    const nextScale = THREE.MathUtils.clamp(scale, 1, 1.5)
+    this.params.restLengthScale = nextScale
+    for (const spring of this.state.springs) {
+      spring.restLength = spring.baseLength * nextScale
+    }
   }
 
   setPinned(index: number, pinned: boolean): void {
@@ -442,7 +467,10 @@ export class CanopySimulation {
     }
 
     const error = (distance - spring.restLength) / distance
-    const correctionScale = error * spring.stiffness
+    let correctionScale = error * spring.stiffness
+    if (distance < spring.restLength) {
+      correctionScale *= this.params.compressionResistance
+    }
     const pinnedA = this.pinnedMask[spring.a]
     const pinnedB = this.pinnedMask[spring.b]
 
@@ -476,8 +504,32 @@ export class CanopySimulation {
     positionAttribute.needsUpdate = true
     this.state.geometry.computeVertexNormals()
     this.state.geometry.computeBoundingSphere()
-    this.pickPoints.geometry.computeBoundingSphere()
+    this.syncPickGeometry(positionAttribute)
     this.syncWireGeometry(positionAttribute)
+  }
+
+  private syncPickGeometry(positionAttribute: THREE.BufferAttribute): void {
+    const pointPositionAttribute = this.pickPoints.geometry.getAttribute('position') as THREE.BufferAttribute
+    const normalAttribute = this.state.geometry.getAttribute('normal') as THREE.BufferAttribute | undefined
+
+    for (let index = 0; index < this.state.positions.length; index += 1) {
+      const positionX = positionAttribute.getX(index)
+      const positionY = positionAttribute.getY(index)
+      const positionZ = positionAttribute.getZ(index)
+      const normalX = normalAttribute ? normalAttribute.getX(index) : 0
+      const normalY = normalAttribute ? normalAttribute.getY(index) : 1
+      const normalZ = normalAttribute ? normalAttribute.getZ(index) : 0
+
+      pointPositionAttribute.setXYZ(
+        index,
+        positionX + normalX * VERTEX_SURFACE_OFFSET,
+        positionY + normalY * VERTEX_SURFACE_OFFSET,
+        positionZ + normalZ * VERTEX_SURFACE_OFFSET,
+      )
+    }
+
+    pointPositionAttribute.needsUpdate = true
+    this.pickPoints.geometry.computeBoundingSphere()
   }
 
   private syncWireGeometry(positionAttribute: THREE.BufferAttribute): void {
@@ -685,13 +737,14 @@ function buildSpringConstraints(
   triangles: readonly TriangleIndices[],
   positions: readonly THREE.Vector3[],
   stiffness: number,
+  restLengthScale: number,
 ): SpringConstraint[] {
   const edgeMap = new Map<string, SpringConstraint>()
 
   const addTriangleEdges = ([indexA, indexB, indexC]: TriangleIndices): void => {
-    addEdge(edgeMap, indexA, indexB, positions, stiffness)
-    addEdge(edgeMap, indexB, indexC, positions, stiffness)
-    addEdge(edgeMap, indexC, indexA, positions, stiffness)
+    addEdge(edgeMap, indexA, indexB, positions, stiffness, restLengthScale)
+    addEdge(edgeMap, indexB, indexC, positions, stiffness, restLengthScale)
+    addEdge(edgeMap, indexC, indexA, positions, stiffness, restLengthScale)
   }
 
   triangles.forEach(addTriangleEdges)
@@ -726,16 +779,19 @@ function addEdge(
   indexB: number,
   positions: readonly THREE.Vector3[],
   stiffness: number,
+  restLengthScale: number,
 ): void {
   const edgeKey = indexA < indexB ? `${indexA}:${indexB}` : `${indexB}:${indexA}`
   if (edgeMap.has(edgeKey)) {
     return
   }
 
+  const baseLength = positions[indexA].distanceTo(positions[indexB])
   edgeMap.set(edgeKey, {
     a: indexA,
     b: indexB,
-    restLength: positions[indexA].distanceTo(positions[indexB]),
+    baseLength,
+    restLength: baseLength * restLengthScale,
     stiffness,
   })
 }
