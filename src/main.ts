@@ -29,6 +29,7 @@ interface PendingHandleClick {
 
 interface AnchorSnapshot {
   position: THREE.Vector3
+  isCornerAnchor: boolean
 }
 
 document.title = '260421_CatenaryCanopy'
@@ -54,90 +55,203 @@ app.innerHTML = `
       </div>
       <div class="ui-body panel-sections">
         <div class="control-hint">Wheel = Zoom, MMB = Pan, RMB = Orbit</div>
-        <div id="statusText" class="control-status"></div>
         <section class="panel-section">
           <button class="panel-section-header" type="button" aria-expanded="true">
             <span class="panel-section-label">Simulation</span>
           </button>
           <div class="panel-section-content panel-controls-stack">
+            <div class="control-hint">
+              LMB = Draw Outline<br />
+              Enter = Finish Outline<br />
+              Connect to Start = Finish Outline
+            </div>
             <div class="control control-grid-2">
               <button id="startButton" class="pill-button action-button is-start-state" type="button">Start</button>
               <button id="resetButton" class="pill-button reset-button" type="button">Reset</button>
             </div>
+            <div class="control">
+              <button id="clearSceneButton" class="pill-button control-button-wide" type="button">Clear</button>
+            </div>
+          </div>
+        </section>
+        <section class="panel-section">
+          <button class="panel-section-header" type="button" aria-expanded="true">
+            <span class="panel-section-label">Physics</span>
+          </button>
+          <div class="panel-section-content panel-controls-stack">
             <label class="control" for="pressureSlider">
               <div class="control-row">
                 <span>Pressure</span>
-                <span id="pressure-value" class="value-pill">56.55</span>
+                <input
+                  id="pressure-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value="56.55"
+                />
               </div>
               <input id="pressureSlider" type="range" min="0" max="100" value="56.55" step="0.01" />
             </label>
             <label class="control" for="crownBiasSlider">
               <div class="control-row">
                 <span>Crown Bias</span>
-                <span id="crown-bias-value" class="value-pill">4.00</span>
+                <input
+                  id="crown-bias-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  max="4"
+                  step="0.01"
+                  value="0.20"
+                />
               </div>
-              <input id="crownBiasSlider" type="range" min="0" max="4" value="4" step="0.01" />
+              <input id="crownBiasSlider" type="range" min="0" max="4" value="0.2" step="0.01" />
             </label>
             <label class="control" for="pressureScaleSlider">
               <div class="control-row">
                 <span>Pressure Scale</span>
-                <span id="pressure-scale-value" class="value-pill">26.0</span>
+                <input
+                  id="pressure-scale-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  max="200"
+                  step="0.1"
+                  value="8.3"
+                />
               </div>
-              <input id="pressureScaleSlider" type="range" min="0" max="200" value="26" step="0.1" />
+              <input id="pressureScaleSlider" type="range" min="0" max="200" value="8.3" step="0.1" />
             </label>
             <label class="control" for="pressureResponseSlider">
               <div class="control-row">
                 <span>Pressure Response</span>
-                <span id="pressure-response-value" class="value-pill">1.90</span>
+                <input
+                  id="pressure-response-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0.1"
+                  max="20"
+                  step="0.1"
+                  value="1.90"
+                />
               </div>
               <input id="pressureResponseSlider" type="range" min="0.1" max="20" value="1.9" step="0.1" />
             </label>
             <label class="control" for="dampingSlider">
               <div class="control-row">
                 <span>Damping</span>
-                <span id="damping-value" class="value-pill">4.80</span>
+                <input
+                  id="damping-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  max="40"
+                  step="0.1"
+                  value="4.80"
+                />
               </div>
               <input id="dampingSlider" type="range" min="0" max="40" value="4.8" step="0.1" />
             </label>
             <label class="control" for="substepsSlider">
               <div class="control-row">
                 <span>Substeps</span>
-                <span id="substeps-value" class="value-pill">5</span>
+                <input
+                  id="substeps-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="20"
+                  step="1"
+                  value="5"
+                />
               </div>
               <input id="substepsSlider" type="range" min="1" max="20" value="5" step="1" />
             </label>
             <label class="control" for="constraintIterationsSlider">
               <div class="control-row">
                 <span>Constraint Iterations</span>
-                <span id="constraint-iterations-value" class="value-pill">10</span>
+                <input
+                  id="constraint-iterations-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="60"
+                  step="1"
+                  value="10"
+                />
               </div>
               <input id="constraintIterationsSlider" type="range" min="1" max="60" value="10" step="1" />
             </label>
             <label class="control" for="stiffnessSlider">
               <div class="control-row">
                 <span>Stiffness</span>
-                <span id="stiffness-value" class="value-pill">0.19</span>
+                <input
+                  id="stiffness-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  max="2"
+                  step="0.01"
+                  value="0.19"
+                />
               </div>
               <input id="stiffnessSlider" type="range" min="0" max="2" value="0.19" step="0.01" />
             </label>
             <label class="control" for="maxDeltaTimeSlider">
               <div class="control-row">
                 <span>Max Delta Time</span>
-                <span id="max-delta-time-value" class="value-pill">0.0320 s</span>
+                <input
+                  id="max-delta-time-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0.004"
+                  max="0.2"
+                  step="0.001"
+                  value="0.0320"
+                />
               </div>
               <input id="maxDeltaTimeSlider" type="range" min="0.004" max="0.2" value="0.032" step="0.001" />
             </label>
             <label class="control" for="subdivisionLevelSlider">
               <div class="control-row">
                 <span>Subdivision Level</span>
-                <span id="subdivision-level-value" class="value-pill">1</span>
+                <input
+                  id="subdivision-level-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  max="4"
+                  step="1"
+                  value="1"
+                />
               </div>
               <input id="subdivisionLevelSlider" type="range" min="0" max="4" value="1" step="1" />
             </label>
             <label class="control" for="meshDensitySlider">
               <div class="control-row">
                 <span>Mesh Density</span>
-                <span id="mesh-density-value" class="value-pill">1.00x</span>
+                <input
+                  id="mesh-density-value"
+                  class="value-pill value-input"
+                  type="number"
+                  inputmode="decimal"
+                  min="0.25"
+                  max="4"
+                  step="0.05"
+                  value="1.00"
+                />
               </div>
               <input id="meshDensitySlider" type="range" min="0.25" max="4" value="1" step="0.05" />
             </label>
@@ -149,15 +263,17 @@ app.innerHTML = `
           </button>
           <div class="panel-section-content panel-controls-stack">
             <div class="control-hint">
-              Outline corners start as anchors.<br />
               LMB Mesh Vert = Add Anchor<br />
-              LMB+Drag Anchor = Raise or Lower
+              LMB+Drag Anchor = Raise or Lower<br />
+              Double LMB Added Anchor = Delete
             </div>
-            <div class="control">
-              <div class="control-row">
-                <span>Anchors</span>
-                <span id="anchor-count-value" class="value-pill">0</span>
-              </div>
+            <label class="toggle-control" for="cornerAnchorsToggle">
+              <span>Corner Anchors</span>
+              <input id="cornerAnchorsToggle" type="checkbox" checked />
+            </label>
+            <div class="control control-grid-2">
+              <button id="groundAnchorsButton" class="pill-button" type="button">Ground</button>
+              <button id="clearAnchorsButton" class="pill-button" type="button">Clear</button>
             </div>
           </div>
         </section>
@@ -297,35 +413,37 @@ const uiPanel = requireElement<HTMLDivElement>('#ui-panel')
 const uiHandleTop = requireElement<HTMLDivElement>('#ui-handle')
 const uiHandleBottom = requireElement<HTMLDivElement>('#ui-handle-bottom')
 const collapseToggle = requireElement<HTMLButtonElement>('#collapseToggle')
-const statusText = requireElement<HTMLDivElement>('#statusText')
 const startButton = requireElement<HTMLButtonElement>('#startButton')
 const resetButton = requireElement<HTMLButtonElement>('#resetButton')
+const clearSceneButton = requireElement<HTMLButtonElement>('#clearSceneButton')
 const exportObjButton = requireElement<HTMLButtonElement>('#exportObjButton')
 const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
 const pressureSlider = requireElement<HTMLInputElement>('#pressureSlider')
-const pressureValue = requireElement<HTMLSpanElement>('#pressure-value')
+const pressureValue = requireElement<HTMLInputElement>('#pressure-value')
 const crownBiasSlider = requireElement<HTMLInputElement>('#crownBiasSlider')
-const crownBiasValue = requireElement<HTMLSpanElement>('#crown-bias-value')
+const crownBiasValue = requireElement<HTMLInputElement>('#crown-bias-value')
 const pressureScaleSlider = requireElement<HTMLInputElement>('#pressureScaleSlider')
-const pressureScaleValue = requireElement<HTMLSpanElement>('#pressure-scale-value')
+const pressureScaleValue = requireElement<HTMLInputElement>('#pressure-scale-value')
 const pressureResponseSlider = requireElement<HTMLInputElement>('#pressureResponseSlider')
-const pressureResponseValue = requireElement<HTMLSpanElement>('#pressure-response-value')
+const pressureResponseValue = requireElement<HTMLInputElement>('#pressure-response-value')
 const dampingSlider = requireElement<HTMLInputElement>('#dampingSlider')
-const dampingValue = requireElement<HTMLSpanElement>('#damping-value')
+const dampingValue = requireElement<HTMLInputElement>('#damping-value')
 const substepsSlider = requireElement<HTMLInputElement>('#substepsSlider')
-const substepsValue = requireElement<HTMLSpanElement>('#substeps-value')
+const substepsValue = requireElement<HTMLInputElement>('#substeps-value')
 const constraintIterationsSlider = requireElement<HTMLInputElement>('#constraintIterationsSlider')
-const constraintIterationsValue = requireElement<HTMLSpanElement>('#constraint-iterations-value')
+const constraintIterationsValue = requireElement<HTMLInputElement>('#constraint-iterations-value')
 const stiffnessSlider = requireElement<HTMLInputElement>('#stiffnessSlider')
-const stiffnessValue = requireElement<HTMLSpanElement>('#stiffness-value')
+const stiffnessValue = requireElement<HTMLInputElement>('#stiffness-value')
 const maxDeltaTimeSlider = requireElement<HTMLInputElement>('#maxDeltaTimeSlider')
-const maxDeltaTimeValue = requireElement<HTMLSpanElement>('#max-delta-time-value')
+const maxDeltaTimeValue = requireElement<HTMLInputElement>('#max-delta-time-value')
 const subdivisionLevelSlider = requireElement<HTMLInputElement>('#subdivisionLevelSlider')
-const subdivisionLevelValue = requireElement<HTMLSpanElement>('#subdivision-level-value')
+const subdivisionLevelValue = requireElement<HTMLInputElement>('#subdivision-level-value')
 const meshDensitySlider = requireElement<HTMLInputElement>('#meshDensitySlider')
-const meshDensityValue = requireElement<HTMLSpanElement>('#mesh-density-value')
-const anchorCountValue = requireElement<HTMLSpanElement>('#anchor-count-value')
+const meshDensityValue = requireElement<HTMLInputElement>('#mesh-density-value')
+const cornerAnchorsToggle = requireElement<HTMLInputElement>('#cornerAnchorsToggle')
+const groundAnchorsButton = requireElement<HTMLButtonElement>('#groundAnchorsButton')
+const clearAnchorsButton = requireElement<HTMLButtonElement>('#clearAnchorsButton')
 const baseGridToggle = requireElement<HTMLInputElement>('#baseGridToggle')
 const wireToggle = requireElement<HTMLInputElement>('#wireToggle')
 const reflectionToggle = requireElement<HTMLInputElement>('#reflectionToggle')
@@ -443,7 +561,7 @@ const anchorHandleGroup = new THREE.Group()
 scene.add(anchorHandleGroup)
 
 const outlineHandleGeometry = new THREE.CylinderGeometry(0.11, 0.11, 0.08, 20)
-const anchorHandleGeometry = new THREE.SphereGeometry(0.12, 16, 12)
+const anchorHandleGeometry = new THREE.SphereGeometry(0.06, 16, 12)
 
 const outlineHandleMaterial = new THREE.MeshStandardMaterial({
   color: 0xf3f7fb,
@@ -455,10 +573,25 @@ const outlineCloseMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.32,
   metalness: 0.04,
 })
+const outlineCloseHoverMaterial = new THREE.MeshStandardMaterial({
+  color: 0x63e88f,
+  roughness: 0.28,
+  metalness: 0.06,
+})
+const outlineHoverMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffa347,
+  roughness: 0.3,
+  metalness: 0.05,
+})
 const anchorHandleMaterial = new THREE.MeshStandardMaterial({
   color: 0xffd47a,
   roughness: 0.28,
   metalness: 0.06,
+})
+const anchorHandleHoverMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffa347,
+  roughness: 0.26,
+  metalness: 0.08,
 })
 
 const outlineLineMaterial = new THREE.LineBasicMaterial({ color: 0xf3f7fb })
@@ -473,6 +606,7 @@ const hitPoint = new THREE.Vector3()
 const clock = new THREE.Clock()
 
 const CLICK_DRAG_THRESHOLD = 6
+const ANCHOR_DOUBLE_CLICK_WINDOW_MS = 320
 const MIN_OUTLINE_SEGMENT_LENGTH = 0.06
 const EXPORT_BASE_NAME = '260421_CatenaryCanopy'
 const FIXED_SIMULATION_STEP = 1 / 60
@@ -494,6 +628,14 @@ let draggingPanel = false
 let pendingHandleClick: PendingHandleClick | null = null
 let draggingOutlinePointId: number | null = null
 let draggingAnchorIndex: number | null = null
+let hoveredAnchorIndex: number | null = null
+let lastAnchorClick:
+  | {
+      index: number
+      timeStamp: number
+    }
+  | null = null
+let useCornerAnchors = cornerAnchorsToggle.checked
 let showBaseGrid = baseGridToggle.checked
 let showWireframe = wireToggle.checked
 let reflectionsEnabled = reflectionToggle.checked
@@ -525,6 +667,46 @@ function updateOutlineValidation(closed = outline.closed): void {
   const validation = validateOutline(outline.points, closed)
   outline.valid = validation.valid
   outline.error = validation.error
+}
+
+function setHoveredOutlinePoint(pointId: number | null): void {
+  if (outline.hoveredVertexId === pointId) {
+    return
+  }
+
+  outline.hoveredVertexId = pointId
+  rebuildOutlineVisuals()
+}
+
+function setHoveredAnchorIndex(anchorIndex: number | null): void {
+  if (hoveredAnchorIndex === anchorIndex) {
+    return
+  }
+
+  hoveredAnchorIndex = anchorIndex
+  rebuildAnchorHandles()
+}
+
+function updateOutlineHover(clientX: number, clientY: number): void {
+  if (simulation || outline.closed || outline.points.length < 3) {
+    setHoveredOutlinePoint(null)
+    return
+  }
+
+  const handleHit = pickOutlineHandle(clientX, clientY)
+  const hoveredPointId = handleHit ? Number(handleHit.object.userData.pointId) : null
+  setHoveredOutlinePoint(hoveredPointId)
+}
+
+function updateAnchorHover(clientX: number, clientY: number): void {
+  if (!simulation) {
+    setHoveredAnchorIndex(null)
+    return
+  }
+
+  const handleHit = pickAnchorHandle(clientX, clientY)
+  const nextHoveredAnchorIndex = handleHit ? Number(handleHit.object.userData.anchorIndex) : null
+  setHoveredAnchorIndex(nextHoveredAnchorIndex)
 }
 
 function rebuildOutlineVisuals(): void {
@@ -569,10 +751,18 @@ function rebuildOutlineVisuals(): void {
       point.id === firstPointId &&
       outline.points.length >= 3 &&
       validateOutline(outline.points, true).valid
+    const isHoveredHandle = outline.hoveredVertexId === point.id
+    const isHoveredCloseHandle = isCloseHandle && outline.hoveredVertexId === point.id
 
     const handle = new THREE.Mesh(
       outlineHandleGeometry,
-      isCloseHandle ? outlineCloseMaterial : outlineHandleMaterial,
+      isHoveredCloseHandle
+        ? outlineCloseHoverMaterial
+        : isHoveredHandle
+          ? outlineHoverMaterial
+        : isCloseHandle
+          ? outlineCloseMaterial
+          : outlineHandleMaterial,
     )
     handle.position.set(point.position.x, 0.05, point.position.y)
     handle.userData.pointId = point.id
@@ -587,7 +777,10 @@ function rebuildAnchorHandles(): void {
   }
 
   for (const anchor of simulation.getAnchorVertices()) {
-    const handle = new THREE.Mesh(anchorHandleGeometry, anchorHandleMaterial)
+    const handle = new THREE.Mesh(
+      anchorHandleGeometry,
+      hoveredAnchorIndex === anchor.index ? anchorHandleHoverMaterial : anchorHandleMaterial,
+    )
     handle.position.copy(anchor.position)
     handle.userData.anchorIndex = anchor.index
     anchorHandleGroup.add(handle)
@@ -630,9 +823,103 @@ function readSliderNumber(input: HTMLInputElement, fallback: number): number {
   return Number.isFinite(value) ? value : fallback
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getSliderStep(slider: HTMLInputElement): number | null {
+  if (slider.step === 'any') {
+    return null
+  }
+
+  const step = Number.parseFloat(slider.step)
+  return Number.isFinite(step) && step > 0 ? step : null
+}
+
+function getDecimalPlaces(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  const valueText = value.toString().toLowerCase()
+  if (valueText.includes('e-')) {
+    const [, exponentText] = valueText.split('e-')
+    const exponent = Number.parseInt(exponentText ?? '0', 10)
+    const decimalSection = valueText.split('.')[1]?.split('e')[0] ?? ''
+    return decimalSection.length + exponent
+  }
+
+  return valueText.split('.')[1]?.length ?? 0
+}
+
+function snapValueToSlider(value: number, slider: HTMLInputElement): number {
+  const min = Number.parseFloat(slider.min)
+  const max = Number.parseFloat(slider.max)
+  let nextValue = value
+
+  if (Number.isFinite(min) && Number.isFinite(max)) {
+    nextValue = clampNumber(nextValue, min, max)
+  }
+
+  const step = getSliderStep(slider)
+  if (step === null) {
+    return nextValue
+  }
+
+  const base = Number.isFinite(min) ? min : 0
+  const snapped = Math.round((nextValue - base) / step) * step + base
+  const decimals = getDecimalPlaces(step)
+  return Number.parseFloat(snapped.toFixed(decimals))
+}
+
+function commitValueInput(
+  valueInput: HTMLInputElement,
+  slider: HTMLInputElement,
+  fallback: number,
+  onCommit: () => void,
+): void {
+  const parsedValue = Number.parseFloat(valueInput.value)
+  const nextValue = snapValueToSlider(
+    Number.isFinite(parsedValue) ? parsedValue : fallback,
+    slider,
+  )
+  slider.value = `${nextValue}`
+  onCommit()
+}
+
+function bindValueInput(
+  valueInput: HTMLInputElement,
+  slider: HTMLInputElement,
+  fallback: number,
+  onCommit: () => void,
+): void {
+  const commit = (): void => {
+    commitValueInput(valueInput, slider, fallback, onCommit)
+  }
+
+  valueInput.addEventListener('change', commit)
+  valueInput.addEventListener('blur', commit)
+  valueInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commit()
+      valueInput.blur()
+      return
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onCommit()
+      valueInput.blur()
+    }
+  })
+}
+
 function captureAnchorSnapshots(): AnchorSnapshot[] {
+  const cornerVertexSet = simulation ? new Set(simulation.flatMesh.cornerVertexIndices) : null
   return simulation?.getAnchorVertices().map((anchor) => ({
     position: anchor.position.clone(),
+    isCornerAnchor: cornerVertexSet?.has(anchor.index) ?? false,
   })) ?? []
 }
 
@@ -666,16 +953,20 @@ function findNearestFlatVertexIndex(
   return nearestIndex
 }
 
+function getCornerAnchorsEnabled(): boolean {
+  return useCornerAnchors
+}
+
 function getPressureValue(): number {
   return readSliderNumber(pressureSlider, 56.55)
 }
 
 function getCrownBiasValue(): number {
-  return readSliderNumber(crownBiasSlider, 4)
+  return readSliderNumber(crownBiasSlider, 0.2)
 }
 
 function getPressureScaleValue(): number {
-  return readSliderNumber(pressureScaleSlider, 26)
+  return readSliderNumber(pressureScaleSlider, 8.3)
 }
 
 function getPressureResponseValue(): number {
@@ -712,6 +1003,7 @@ function getMeshDensityValue(): number {
 
 function getSimulationBuildParams() {
   return {
+    useCornerAnchors: getCornerAnchorsEnabled(),
     pressure: getPressureValue(),
     crownBias: getCrownBiasValue(),
     pressureScale: getPressureScaleValue(),
@@ -763,6 +1055,8 @@ function updateOutlinePoint(pointId: number, point: THREE.Vector3): void {
 
 function buildSimulation(preserveAnchorHeights = false): void {
   const previousAnchorSnapshots = preserveAnchorHeights ? captureAnchorSnapshots() : []
+  outline.hoveredVertexId = null
+  hoveredAnchorIndex = null
   disposeSimulation()
   simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), getSimulationBuildParams())
   simulationAccumulator = 0
@@ -772,6 +1066,10 @@ function buildSimulation(preserveAnchorHeights = false): void {
   if (previousAnchorSnapshots.length > 0) {
     const usedIndices = new Set<number>()
     for (const snapshot of previousAnchorSnapshots) {
+      if (!getCornerAnchorsEnabled() && snapshot.isCornerAnchor) {
+        continue
+      }
+
       const nearestIndex = findNearestFlatVertexIndex(snapshot.position, usedIndices)
       if (nearestIndex < 0) {
         continue
@@ -809,11 +1107,26 @@ function disposeSimulation(): void {
   }
 
   simulationAccumulator = 0
+  hoveredAnchorIndex = null
   scene.remove(simulation.mesh)
   simulation.dispose()
   simulation = null
   rebuildOutlineVisuals()
   rebuildAnchorHandles()
+}
+
+function clearSceneState(): void {
+  solverRunning = false
+  simulationAccumulator = 0
+  controls.enabled = true
+  clearHandleInteraction()
+  hoveredAnchorIndex = null
+  outline = createEditableOutline()
+  nextPointId = 1
+  disposeSimulation()
+  rebuildOutlineVisuals()
+  rebuildAnchorHandles()
+  refreshUiState()
 }
 
 function resetSimulationState(): void {
@@ -832,57 +1145,57 @@ function resetSimulationState(): void {
 }
 
 function updatePressureLabel(): void {
-  pressureValue.textContent = getPressureValue().toFixed(2)
+  pressureValue.value = getPressureValue().toFixed(2)
   updateRangeProgress(pressureSlider)
 }
 
 function updateCrownBiasLabel(): void {
-  crownBiasValue.textContent = getCrownBiasValue().toFixed(2)
+  crownBiasValue.value = getCrownBiasValue().toFixed(2)
   updateRangeProgress(crownBiasSlider)
 }
 
 function updatePressureScaleLabel(): void {
-  pressureScaleValue.textContent = getPressureScaleValue().toFixed(1)
+  pressureScaleValue.value = getPressureScaleValue().toFixed(1)
   updateRangeProgress(pressureScaleSlider)
 }
 
 function updatePressureResponseLabel(): void {
-  pressureResponseValue.textContent = getPressureResponseValue().toFixed(2)
+  pressureResponseValue.value = getPressureResponseValue().toFixed(2)
   updateRangeProgress(pressureResponseSlider)
 }
 
 function updateDampingLabel(): void {
-  dampingValue.textContent = getDampingValue().toFixed(2)
+  dampingValue.value = getDampingValue().toFixed(2)
   updateRangeProgress(dampingSlider)
 }
 
 function updateSubstepsLabel(): void {
-  substepsValue.textContent = `${getSubstepsValue()}`
+  substepsValue.value = `${getSubstepsValue()}`
   updateRangeProgress(substepsSlider)
 }
 
 function updateConstraintIterationsLabel(): void {
-  constraintIterationsValue.textContent = `${getConstraintIterationsValue()}`
+  constraintIterationsValue.value = `${getConstraintIterationsValue()}`
   updateRangeProgress(constraintIterationsSlider)
 }
 
 function updateStiffnessLabel(): void {
-  stiffnessValue.textContent = getStiffnessValue().toFixed(2)
+  stiffnessValue.value = getStiffnessValue().toFixed(2)
   updateRangeProgress(stiffnessSlider)
 }
 
 function updateMaxDeltaTimeLabel(): void {
-  maxDeltaTimeValue.textContent = `${getMaxDeltaTimeValue().toFixed(4)} s`
+  maxDeltaTimeValue.value = getMaxDeltaTimeValue().toFixed(4)
   updateRangeProgress(maxDeltaTimeSlider)
 }
 
 function updateSubdivisionLevelLabel(): void {
-  subdivisionLevelValue.textContent = `${getSubdivisionLevelValue()}`
+  subdivisionLevelValue.value = `${getSubdivisionLevelValue()}`
   updateRangeProgress(subdivisionLevelSlider)
 }
 
 function updateMeshDensityLabel(): void {
-  meshDensityValue.textContent = `${getMeshDensityValue().toFixed(2)}x`
+  meshDensityValue.value = getMeshDensityValue().toFixed(2)
   updateRangeProgress(meshDensitySlider)
 }
 
@@ -899,30 +1212,24 @@ function refreshUiState(): void {
   updateSubdivisionLevelLabel()
   updateMeshDensityLabel()
 
-  const anchorCount = simulation?.getPinnedCount() ?? 0
-  anchorCountValue.textContent = `${anchorCount}`
-
   const hasSimulation = simulation !== null
   startButton.textContent = solverRunning ? 'Pause' : 'Start'
   startButton.classList.toggle('is-start-state', !solverRunning)
   startButton.classList.toggle('is-stop-state', solverRunning)
-  startButton.disabled = !hasSimulation || anchorCount === 0
-  exportObjButton.disabled = !hasSimulation
-  exportGlbButton.disabled = !hasSimulation
-  exportScreenshotButton.disabled = !hasSimulation
+  startButton.disabled = false
+  groundAnchorsButton.disabled = false
+  clearAnchorsButton.disabled = false
+  exportObjButton.disabled = false
+  exportGlbButton.disabled = false
+  exportScreenshotButton.disabled = false
 
   if (!hasSimulation) {
-    statusText.textContent = outline.error
     return
   }
 
   if (solverRunning) {
-    statusText.textContent = 'Inflating. Click mesh verts to add anchors, or drag an anchor vertically.'
     return
   }
-
-  statusText.textContent =
-    'Corners start anchored. Click mesh verts to add more anchors, then drag any anchor to change height.'
 }
 
 function applyDisplayVisibilityState(): void {
@@ -955,6 +1262,15 @@ function beginAnchorDrag(anchorIndex: number): void {
     .crossVectors(horizontalDirection, new THREE.Vector3(0, 1, 0))
     .normalize()
   anchorDragPlane.setFromNormalAndCoplanarPoint(planeNormal, anchorPosition)
+}
+
+function stopSolverIfNoAnchors(): void {
+  if (simulation?.getPinnedCount()) {
+    return
+  }
+
+  solverRunning = false
+  simulationAccumulator = 0
 }
 
 function toggleSolver(): void {
@@ -1183,72 +1499,162 @@ function clearHandleInteraction(): void {
   pendingHandleClick = null
   draggingOutlinePointId = null
   draggingAnchorIndex = null
+  lastAnchorClick = null
 }
 
-startButton.addEventListener('click', toggleSolver)
-resetButton.addEventListener('click', resetSimulationState)
-exportObjButton.addEventListener('click', exportObj)
-exportGlbButton.addEventListener('click', exportGlb)
-exportScreenshotButton.addEventListener('click', exportScreenshot)
-
-pressureSlider.addEventListener('input', () => {
+function applyPressureValue(): void {
   updatePressureLabel()
   simulation?.setPressure(getPressureValue())
   refreshUiState()
-})
+}
 
-crownBiasSlider.addEventListener('input', () => {
+function applyCrownBiasValue(): void {
   updateCrownBiasLabel()
   simulation?.setCrownBias(getCrownBiasValue())
-})
+}
 
-pressureScaleSlider.addEventListener('input', () => {
+function applyPressureScaleValue(): void {
   updatePressureScaleLabel()
   simulation?.setPressureScale(getPressureScaleValue())
-})
+}
 
-pressureResponseSlider.addEventListener('input', () => {
+function applyPressureResponseValue(): void {
   updatePressureResponseLabel()
   simulation?.setPressureResponse(getPressureResponseValue())
-})
+}
 
-dampingSlider.addEventListener('input', () => {
+function applyDampingValue(): void {
   updateDampingLabel()
   simulation?.setDamping(getDampingValue())
-})
+}
 
-substepsSlider.addEventListener('input', () => {
+function applySubstepsValue(): void {
   updateSubstepsLabel()
   simulation?.setSubsteps(getSubstepsValue())
-})
+}
 
-constraintIterationsSlider.addEventListener('input', () => {
+function applyConstraintIterationsValue(): void {
   updateConstraintIterationsLabel()
   simulation?.setConstraintIterations(getConstraintIterationsValue())
-})
+}
 
-stiffnessSlider.addEventListener('input', () => {
+function applyStiffnessValue(): void {
   updateStiffnessLabel()
   simulation?.setStiffness(getStiffnessValue())
-})
+}
 
-maxDeltaTimeSlider.addEventListener('input', () => {
+function applyMaxDeltaTimeValue(): void {
   updateMaxDeltaTimeLabel()
   simulation?.setMaxDeltaTime(getMaxDeltaTimeValue())
-})
+}
 
-subdivisionLevelSlider.addEventListener('input', () => {
+function applySubdivisionLevelValue(): void {
   updateSubdivisionLevelLabel()
   simulation?.setSubdivisionLevel(getSubdivisionLevelValue())
-})
+}
 
-meshDensitySlider.addEventListener('input', () => {
+function applyMeshDensityValue(): void {
   updateMeshDensityLabel()
   if (!simulation) {
     return
   }
 
   buildSimulation(true)
+  refreshUiState()
+}
+
+function handleAnchorClick(anchorIndex: number, timeStamp: number): void {
+  if (!simulation) {
+    return
+  }
+
+  const isDoubleClick =
+    lastAnchorClick !== null &&
+    lastAnchorClick.index === anchorIndex &&
+    timeStamp - lastAnchorClick.timeStamp <= ANCHOR_DOUBLE_CLICK_WINDOW_MS
+
+  if (!isDoubleClick) {
+    lastAnchorClick = {
+      index: anchorIndex,
+      timeStamp,
+    }
+    return
+  }
+
+  lastAnchorClick = null
+  if (!simulation.removePinnedVertex(anchorIndex, getCornerAnchorsEnabled())) {
+    return
+  }
+
+  stopSolverIfNoAnchors()
+  hoveredAnchorIndex = null
+  rebuildAnchorHandles()
+  refreshUiState()
+}
+
+startButton.addEventListener('click', toggleSolver)
+resetButton.addEventListener('click', resetSimulationState)
+clearSceneButton.addEventListener('click', clearSceneState)
+exportObjButton.addEventListener('click', exportObj)
+exportGlbButton.addEventListener('click', exportGlb)
+exportScreenshotButton.addEventListener('click', exportScreenshot)
+
+pressureSlider.addEventListener('input', applyPressureValue)
+crownBiasSlider.addEventListener('input', applyCrownBiasValue)
+pressureScaleSlider.addEventListener('input', applyPressureScaleValue)
+pressureResponseSlider.addEventListener('input', applyPressureResponseValue)
+dampingSlider.addEventListener('input', applyDampingValue)
+substepsSlider.addEventListener('input', applySubstepsValue)
+constraintIterationsSlider.addEventListener('input', applyConstraintIterationsValue)
+stiffnessSlider.addEventListener('input', applyStiffnessValue)
+maxDeltaTimeSlider.addEventListener('input', applyMaxDeltaTimeValue)
+subdivisionLevelSlider.addEventListener('input', applySubdivisionLevelValue)
+meshDensitySlider.addEventListener('input', applyMeshDensityValue)
+
+bindValueInput(pressureValue, pressureSlider, 56.55, applyPressureValue)
+bindValueInput(crownBiasValue, crownBiasSlider, 0.2, applyCrownBiasValue)
+bindValueInput(pressureScaleValue, pressureScaleSlider, 8.3, applyPressureScaleValue)
+bindValueInput(pressureResponseValue, pressureResponseSlider, 1.9, applyPressureResponseValue)
+bindValueInput(dampingValue, dampingSlider, 4.8, applyDampingValue)
+bindValueInput(substepsValue, substepsSlider, 5, applySubstepsValue)
+bindValueInput(
+  constraintIterationsValue,
+  constraintIterationsSlider,
+  10,
+  applyConstraintIterationsValue,
+)
+bindValueInput(stiffnessValue, stiffnessSlider, 0.19, applyStiffnessValue)
+bindValueInput(maxDeltaTimeValue, maxDeltaTimeSlider, 0.032, applyMaxDeltaTimeValue)
+bindValueInput(subdivisionLevelValue, subdivisionLevelSlider, 1, applySubdivisionLevelValue)
+bindValueInput(meshDensityValue, meshDensitySlider, 1, applyMeshDensityValue)
+
+cornerAnchorsToggle.addEventListener('change', () => {
+  useCornerAnchors = cornerAnchorsToggle.checked
+  if (simulation) {
+    buildSimulation(true)
+    stopSolverIfNoAnchors()
+  }
+  refreshUiState()
+})
+
+groundAnchorsButton.addEventListener('click', () => {
+  if (!simulation || simulation.getPinnedCount() === 0) {
+    return
+  }
+
+  simulation.groundPinnedVertices()
+  rebuildAnchorHandles()
+  refreshUiState()
+})
+
+clearAnchorsButton.addEventListener('click', () => {
+  if (!simulation || simulation.getPinnedCount() === 0) {
+    return
+  }
+
+  simulation.clearPinnedVertices(getCornerAnchorsEnabled())
+  stopSolverIfNoAnchors()
+  rebuildAnchorHandles()
   refreshUiState()
 })
 
@@ -1367,6 +1773,16 @@ renderer.domElement.addEventListener(
 )
 
 renderer.domElement.addEventListener('pointermove', (event) => {
+  if (draggingOutlinePointId === null && draggingAnchorIndex === null) {
+    if (simulation) {
+      updateAnchorHover(event.clientX, event.clientY)
+      setHoveredOutlinePoint(null)
+    } else {
+      updateOutlineHover(event.clientX, event.clientY)
+      setHoveredAnchorIndex(null)
+    }
+  }
+
   if (pendingHandleClick && draggingOutlinePointId === null && draggingAnchorIndex === null) {
     if (pendingHandleClick.pointerId !== event.pointerId) {
       return
@@ -1377,7 +1793,8 @@ renderer.domElement.addEventListener('pointermove', (event) => {
       event.clientY - pendingHandleClick.clientY,
     )
 
-    if (dragDistance > CLICK_DRAG_THRESHOLD) {
+      if (dragDistance > CLICK_DRAG_THRESHOLD) {
+      lastAnchorClick = null
       if (pendingHandleClick.type === 'outline') {
         draggingOutlinePointId = pendingHandleClick.pointId ?? null
       } else if (pendingHandleClick.type === 'anchor') {
@@ -1455,6 +1872,13 @@ renderer.domElement.addEventListener('pointerup', (event) => {
       closeOutline()
     } else if (
       dragDistance <= CLICK_DRAG_THRESHOLD &&
+      pendingHandleClick.type === 'anchor' &&
+      simulation &&
+      pendingHandleClick.anchorIndex !== undefined
+    ) {
+      handleAnchorClick(pendingHandleClick.anchorIndex, event.timeStamp)
+    } else if (
+      dragDistance <= CLICK_DRAG_THRESHOLD &&
       pendingHandleClick.type === 'vertex' &&
       simulation &&
       pendingHandleClick.anchorIndex !== undefined
@@ -1478,7 +1902,14 @@ renderer.domElement.addEventListener('pointercancel', (event) => {
   }
 
   clearHandleInteraction()
+  setHoveredOutlinePoint(null)
+  setHoveredAnchorIndex(null)
   controls.enabled = true
+})
+
+renderer.domElement.addEventListener('pointerleave', () => {
+  setHoveredOutlinePoint(null)
+  setHoveredAnchorIndex(null)
 })
 
 window.addEventListener('pointermove', (event) => {
@@ -1593,7 +2024,10 @@ window.addEventListener('beforeunload', () => {
   anchorHandleGeometry.dispose()
   outlineHandleMaterial.dispose()
   outlineCloseMaterial.dispose()
+  outlineCloseHoverMaterial.dispose()
+  outlineHoverMaterial.dispose()
   anchorHandleMaterial.dispose()
+  anchorHandleHoverMaterial.dispose()
   outlineLineMaterial.dispose()
   invalidOutlineLineMaterial.dispose()
   renderer.dispose()

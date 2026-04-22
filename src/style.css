@@ -105,21 +105,12 @@ html:not(.ui-ready) #ui-panel {
   display: none;
 }
 
-.control-hint,
-.control-status {
+.control-hint {
   margin: 0;
   padding: 0;
   font-size: 0.73rem;
   letter-spacing: 0.01em;
   color: var(--text-muted);
-}
-
-.control-status {
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  line-height: 1.45;
 }
 
 .collapse-button {
@@ -289,6 +280,29 @@ input[type="range"]:focus-visible,
   font-size: 0.7rem;
   font-weight: 560;
   color: var(--text-primary);
+}
+
+.value-input {
+  width: 8ch;
+  outline: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.value-input::-webkit-outer-spin-button,
+.value-input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.value-input:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.value-input:focus {
+  border-color: rgba(203, 217, 255, 0.44);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .pill-button {

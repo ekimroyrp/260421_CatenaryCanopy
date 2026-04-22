@@ -54,6 +54,7 @@ export interface AnchorVertex {
 }
 
 export interface CanopySimulationParams {
+  useCornerAnchors: boolean
   pressure: number
   crownBias: number
   pressureScale: number
@@ -81,9 +82,10 @@ export interface CanopySimulationState {
 }
 
 const DEFAULT_PARAMS: CanopySimulationParams = {
+  useCornerAnchors: true,
   pressure: 56.55,
-  crownBias: 4,
-  pressureScale: 26,
+  crownBias: 0.2,
+  pressureScale: 8.3,
   pressureResponse: 1.9,
   damping: 4.8,
   substeps: 5,
@@ -378,6 +380,10 @@ export class CanopySimulation {
     return index >= 0 && index < this.pinnedMask.length && this.pinnedMask[index]
   }
 
+  isCornerVertex(index: number): boolean {
+    return this.flatMesh.cornerVertexIndices.includes(index)
+  }
+
   ensurePinnedVertex(index: number, displayHeight = this.state.positions[index]?.y ?? 0): boolean {
     if (index < 0 || index >= this.state.positions.length) {
       return false
@@ -410,6 +416,70 @@ export class CanopySimulation {
     this.state.positions[index].copy(nextTarget)
     this.previousPositions[index].copy(nextTarget)
     this.state.velocities[index].set(0, 0, 0)
+    this.syncGeometry()
+  }
+
+  removePinnedVertex(index: number, preserveCornerAnchors: boolean): boolean {
+    if (!this.isPinnedVertex(index)) {
+      return false
+    }
+
+    if (preserveCornerAnchors && this.isCornerVertex(index)) {
+      return false
+    }
+
+    this.pinnedMask[index] = false
+    this.state.anchorIndices.splice(
+      0,
+      this.state.anchorIndices.length,
+      ...this.state.anchorIndices.filter((anchorIndex) => anchorIndex !== index),
+    )
+    this.previousPositions[index].copy(this.state.positions[index])
+    this.state.velocities[index].set(0, 0, 0)
+    this.syncGeometry()
+    return true
+  }
+
+  groundPinnedVertices(): void {
+    if (this.state.anchorIndices.length === 0) {
+      return
+    }
+
+    for (const index of this.state.anchorIndices) {
+      const restPosition = this.state.basePositions[index]
+      const target = this.state.pinnedTargets[index]
+      target.set(restPosition.x, 0, restPosition.z)
+      this.state.positions[index].copy(target)
+      this.previousPositions[index].copy(target)
+      this.state.velocities[index].set(0, 0, 0)
+    }
+
+    this.syncGeometry()
+  }
+
+  clearPinnedVertices(preserveCornerAnchors: boolean): void {
+    if (this.state.anchorIndices.length === 0 && !preserveCornerAnchors) {
+      return
+    }
+
+    const preservedCornerSet = preserveCornerAnchors
+      ? new Set<number>(this.flatMesh.cornerVertexIndices)
+      : new Set<number>()
+    const nextAnchorIndices: number[] = []
+
+    for (let index = 0; index < this.state.positions.length; index += 1) {
+      const shouldRemainPinned = preservedCornerSet.has(index)
+      this.pinnedMask[index] = shouldRemainPinned
+
+      if (shouldRemainPinned) {
+        nextAnchorIndices.push(index)
+        continue
+      }
+
+      this.state.velocities[index].set(0, 0, 0)
+    }
+
+    this.state.anchorIndices.splice(0, this.state.anchorIndices.length, ...nextAnchorIndices)
     this.syncGeometry()
   }
 
@@ -850,7 +920,7 @@ function createSimulationTopology(flatMesh: FlatMeshData, params: CanopySimulati
   for (let index = 0; index < flatMesh.vertices.length; index += 1) {
     const vertex = flatMesh.vertices[index]
     const basePosition = new THREE.Vector3(vertex.x, 0, vertex.y)
-    const pinned = cornerVertexSet.has(index)
+    const pinned = params.useCornerAnchors && cornerVertexSet.has(index)
 
     positions.push(basePosition.clone())
     velocities.push(new THREE.Vector3())
@@ -869,8 +939,10 @@ function createSimulationTopology(flatMesh: FlatMeshData, params: CanopySimulati
     pinnedTargets,
     anchorIndices,
     springs: buildSpringConstraints(flatMesh.triangles, positions, params.stiffness),
+    // The flat outline mesh is CCW in XY space, but we place it on the XZ plane with Y up.
+    // Flipping the winding here keeps the canopy's computed normals facing outward/upward.
     triangles: flatMesh.triangles.map(
-      ([indexA, indexB, indexC]) => [indexA, indexB, indexC] satisfies TriangleIndices,
+      ([indexA, indexB, indexC]) => [indexA, indexC, indexB] satisfies TriangleIndices,
     ),
     pinnedMask,
     crownWeights,
