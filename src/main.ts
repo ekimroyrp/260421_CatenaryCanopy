@@ -67,6 +67,13 @@ app.innerHTML = `
               </div>
               <input id="pressureSlider" type="range" min="0" max="100" value="0.42" step="0.01" />
             </label>
+            <label class="control" for="crownBiasSlider">
+              <div class="control-row">
+                <span>Crown Bias</span>
+                <span id="crown-bias-value" class="value-pill">0.00</span>
+              </div>
+              <input id="crownBiasSlider" type="range" min="0" max="4" value="0" step="0.01" />
+            </label>
             <label class="control" for="pressureScaleSlider">
               <div class="control-row">
                 <span>Pressure Scale</span>
@@ -293,6 +300,8 @@ const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
 const pressureSlider = requireElement<HTMLInputElement>('#pressureSlider')
 const pressureValue = requireElement<HTMLSpanElement>('#pressure-value')
+const crownBiasSlider = requireElement<HTMLInputElement>('#crownBiasSlider')
+const crownBiasValue = requireElement<HTMLSpanElement>('#crown-bias-value')
 const pressureScaleSlider = requireElement<HTMLInputElement>('#pressureScaleSlider')
 const pressureScaleValue = requireElement<HTMLSpanElement>('#pressure-scale-value')
 const pressureResponseSlider = requireElement<HTMLInputElement>('#pressureResponseSlider')
@@ -603,6 +612,10 @@ function getPressureValue(): number {
   return Number.parseFloat(pressureSlider.value) || 0
 }
 
+function getCrownBiasValue(): number {
+  return Number.parseFloat(crownBiasSlider.value) || 0
+}
+
 function getPressureScaleValue(): number {
   return Number.parseFloat(pressureScaleSlider.value) || 26
 }
@@ -642,6 +655,7 @@ function getMeshDensityValue(): number {
 function getSimulationBuildParams() {
   return {
     pressure: getPressureValue(),
+    crownBias: getCrownBiasValue(),
     pressureScale: getPressureScaleValue(),
     pressureResponse: getPressureResponseValue(),
     damping: getDampingValue(),
@@ -761,6 +775,11 @@ function updatePressureLabel(): void {
   updateRangeProgress(pressureSlider)
 }
 
+function updateCrownBiasLabel(): void {
+  crownBiasValue.textContent = getCrownBiasValue().toFixed(2)
+  updateRangeProgress(crownBiasSlider)
+}
+
 function updatePressureScaleLabel(): void {
   pressureScaleValue.textContent = getPressureScaleValue().toFixed(1)
   updateRangeProgress(pressureScaleSlider)
@@ -808,6 +827,7 @@ function updateMeshDensityLabel(): void {
 
 function refreshUiState(): void {
   updatePressureLabel()
+  updateCrownBiasLabel()
   updatePressureScaleLabel()
   updatePressureResponseLabel()
   updateDampingLabel()
@@ -1114,6 +1134,11 @@ pressureSlider.addEventListener('input', () => {
   updatePressureLabel()
   simulation?.setPressure(getPressureValue())
   refreshUiState()
+})
+
+crownBiasSlider.addEventListener('input', () => {
+  updateCrownBiasLabel()
+  simulation?.setCrownBias(getCrownBiasValue())
 })
 
 pressureScaleSlider.addEventListener('input', () => {
@@ -1459,6 +1484,7 @@ function animate(): void {
 rebuildOutlineVisuals()
 bindSectionCollapses()
 updatePressureLabel()
+updateCrownBiasLabel()
 applyDisplayVisibilityState()
 applyReflectionState()
 refreshUiState()

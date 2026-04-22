@@ -55,6 +55,7 @@ export interface AnchorVertex {
 
 export interface CanopySimulationParams {
   pressure: number
+  crownBias: number
   pressureScale: number
   pressureResponse: number
   damping: number
@@ -81,6 +82,7 @@ export interface CanopySimulationState {
 
 const DEFAULT_PARAMS: CanopySimulationParams = {
   pressure: 0.42,
+  crownBias: 0,
   pressureScale: 26,
   pressureResponse: 1.9,
   damping: 4.2,
@@ -139,6 +141,7 @@ export class CanopySimulation {
   private displaySubdivisionLevel: number
   private readonly params: CanopySimulationParams
   private readonly pinnedMask: boolean[]
+  private readonly crownWeights: Float32Array
   private readonly forces: THREE.Vector3[]
   private readonly previousPositions: THREE.Vector3[]
   private readonly coarseRenderTopology: RenderTopology
@@ -187,6 +190,7 @@ export class CanopySimulation {
 
     this.displaySubdivisionLevel = Math.max(0, Math.round(this.params.displaySubdivisionLevel))
     this.pinnedMask = simData.pinnedMask
+    this.crownWeights = simData.crownWeights
     this.forces = simData.positions.map(() => new THREE.Vector3())
     this.previousPositions = simData.positions.map((position) => position.clone())
     this.eggIridescenceState = {
@@ -267,6 +271,10 @@ export class CanopySimulation {
 
   setPressure(pressure: number): void {
     this.state.targetPressure = THREE.MathUtils.clamp(pressure, 0, 100)
+  }
+
+  setCrownBias(crownBias: number): void {
+    this.params.crownBias = THREE.MathUtils.clamp(crownBias, 0, 4)
   }
 
   setPressureScale(pressureScale: number): void {
@@ -433,7 +441,8 @@ export class CanopySimulation {
         continue
       }
 
-      this.forces[index].y += strength
+      const crownMultiplier = 1 + this.crownWeights[index] * this.params.crownBias
+      this.forces[index].y += strength * crownMultiplier
     }
   }
 
@@ -745,6 +754,7 @@ function createSimulationTopology(flatMesh: FlatMeshData, params: CanopySimulati
   springs: SpringConstraint[]
   triangles: TriangleIndices[]
   pinnedMask: boolean[]
+  crownWeights: Float32Array
 } {
   const positions: THREE.Vector3[] = []
   const velocities: THREE.Vector3[] = []
@@ -753,6 +763,7 @@ function createSimulationTopology(flatMesh: FlatMeshData, params: CanopySimulati
   const pinnedMask: boolean[] = []
   const anchorIndices: number[] = []
   const cornerVertexSet = new Set(flatMesh.cornerVertexIndices)
+  const crownWeights = buildCrownWeights(flatMesh)
 
   for (let index = 0; index < flatMesh.vertices.length; index += 1) {
     const vertex = flatMesh.vertices[index]
@@ -780,7 +791,102 @@ function createSimulationTopology(flatMesh: FlatMeshData, params: CanopySimulati
       ([indexA, indexB, indexC]) => [indexA, indexB, indexC] satisfies TriangleIndices,
     ),
     pinnedMask,
+    crownWeights,
   }
+}
+
+function buildCrownWeights(flatMesh: FlatMeshData): Float32Array {
+  const weights = new Float32Array(flatMesh.vertices.length)
+  let maxDistance = 0
+
+  for (let index = 0; index < flatMesh.vertices.length; index += 1) {
+    if (flatMesh.boundaryVertexIndices.has(index)) {
+      weights[index] = 0
+      continue
+    }
+
+    const distance = distanceToSeamPath(flatMesh.vertices[index], flatMesh.seamPath, true)
+    weights[index] = distance
+    maxDistance = Math.max(maxDistance, distance)
+  }
+
+  if (maxDistance <= 1e-6) {
+    return weights
+  }
+
+  for (let index = 0; index < weights.length; index += 1) {
+    weights[index] = THREE.MathUtils.clamp(weights[index] / maxDistance, 0, 1)
+  }
+
+  const adjacency = buildTopologyAdjacency(flatMesh.triangles, flatMesh.vertices.length)
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    const nextWeights = new Float32Array(weights)
+
+    for (let index = 0; index < weights.length; index += 1) {
+      if (flatMesh.boundaryVertexIndices.has(index)) {
+        nextWeights[index] = 0
+        continue
+      }
+
+      const neighbors = adjacency[index]
+      if (neighbors.length === 0) {
+        continue
+      }
+
+      let neighborAverage = 0
+      for (const neighborIndex of neighbors) {
+        neighborAverage += weights[neighborIndex]
+      }
+      neighborAverage /= neighbors.length
+
+      nextWeights[index] = THREE.MathUtils.lerp(weights[index], neighborAverage, 0.24)
+    }
+
+    weights.set(nextWeights)
+  }
+
+  return weights
+}
+
+function distanceToSeamPath(
+  point: THREE.Vector2,
+  seamPath: readonly THREE.Vector2[],
+  closed: boolean,
+): number {
+  let minDistanceSquared = Number.POSITIVE_INFINITY
+  const segmentCount = closed ? seamPath.length : Math.max(0, seamPath.length - 1)
+
+  for (let index = 0; index < segmentCount; index += 1) {
+    const start = seamPath[index]
+    const end = seamPath[(index + 1) % seamPath.length]
+    minDistanceSquared = Math.min(
+      minDistanceSquared,
+      distanceToSegmentSquared(point, start, end),
+    )
+  }
+
+  return Math.sqrt(minDistanceSquared)
+}
+
+function distanceToSegmentSquared(
+  point: THREE.Vector2,
+  start: THREE.Vector2,
+  end: THREE.Vector2,
+): number {
+  const segment = end.clone().sub(start)
+  const segmentLengthSquared = segment.lengthSq()
+
+  if (segmentLengthSquared < 1e-6) {
+    return point.distanceToSquared(start)
+  }
+
+  const projection = THREE.MathUtils.clamp(
+    point.clone().sub(start).dot(segment) / segmentLengthSquared,
+    0,
+    1,
+  )
+  const closestPoint = start.clone().add(segment.multiplyScalar(projection))
+  return point.distanceToSquared(closestPoint)
 }
 
 function buildSpringConstraints(
