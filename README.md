@@ -1,20 +1,19 @@
 # 260421_CatenaryCanopy
 
-260421_CatenaryCanopy is a Vite + TypeScript + Three.js canopy form-finding tool for drawing a closed plan outline, auto-generating a triangulated mesh, pinning any mesh vertices as anchors, and relaxing the sheet under gravity to produce an inverted funicular canopy surface.
+260421_CatenaryCanopy is a Vite + TypeScript + Three.js canopy form-finding tool for drawing a closed plan outline, auto-generating a triangulated mesh, and inflating a single-surface canopy between corner anchors. The app keeps the same polished scene shell and control panel style as the reference project, but the current workflow is simplified to one outline, fixed corner supports, pressure-driven shaping, and vertical anchor-height editing.
 
 ## Features
 
 - Floating Apple-style control panel, studio-light environment, and fading base grid adapted from the reference Three.js project
 - Single closed-outline authoring workflow with click-to-place corners, point dragging, and Enter or start-point closure
 - Automatic interior mesh generation from the outline using adaptive Delaunay triangulation
-- Visible mesh-point anchor editing where any mesh vertex can be pinned or unpinned
-- Vertical anchor dragging for fast support-height adjustments
-- Live hanging-mesh relaxation solver with gravity control defaulting to `9.81 m/s^2`
-- Simulation speed control for slowing down or accelerating the live relaxation playback
-- Spring-length slack control for adding more sag and reducing the overly taut membrane look
-- Spring-strength control for tightening or softening the structural response of the canopy mesh
-- Inverted display of the hanging solve so the visible result matches funicular canopy references
-- Wire overlay, foil material toggle, OBJ export, GLB export, and screenshot export
+- Single-surface inflation solver with no simulated or rendered bottom sheet
+- Corner-only anchor workflow where the outline corners become the fixed supports automatically
+- Vertical corner-anchor dragging for fast support-height adjustments
+- Pressure-driven canopy shaping with live `Pressure` control from `0` to `5`
+- Simulation speed control for slowing down or accelerating the live inflation playback
+- Smoothed render surface with wire overlay and foil material toggle
+- OBJ export, GLB export, and screenshot export
 
 ## Getting Started
 
@@ -29,14 +28,12 @@
 - `LMB` on the ground places outline points
 - Click the first outline point or press `Enter` to close the outline
 - `LMB + Drag` on an outline point moves it before meshing
-- `LMB` on a visible mesh point toggles it as an anchor
-- `LMB + Drag` on an anchored handle moves that anchor vertically
-- `Start / Pause` runs or pauses the live catenary relaxation
-- `Reset` rewinds the current simulation while keeping the existing outline, mesh, and pinned anchors
+- Outline corners become the fixed anchors automatically after mesh generation
+- `LMB + Drag` on a corner anchor handle moves that anchor vertically
+- `Start / Pause` runs or pauses the live inflation solve
+- `Reset` rewinds the current simulation while keeping the existing outline, mesh, and corner anchors
 - `Speed` changes how fast the live simulation advances
-- `Gravity` changes the solver acceleration in `m/s^2`
-- `Spring Length` increases or decreases mesh slack to make the canopy hang softer or tighter
-- `Spring Strength` changes how strongly the mesh springs pull the canopy toward equilibrium
+- `Pressure` changes the inflation force from `0` to `5`
 - `Base Grid`, `Mesh Wires`, and `Foil Material` toggle display layers
 - `Mouse Wheel` zooms, `MMB` pans, and `RMB` orbits
 - `Export OBJ`, `Export GLB`, and `Export Screenshot` save the current result

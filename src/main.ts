@@ -35,8 +35,8 @@ const app = document.querySelector<HTMLDivElement>('#app') ?? (() => {
 
 app.innerHTML = `
   <div class="app-shell">
-    <canvas class="viewport" aria-label="Catenary canopy viewport"></canvas>
-    <section id="ui-panel" class="apple-panel" aria-label="Catenary canopy controls">
+    <canvas class="viewport" aria-label="Inflation canopy viewport"></canvas>
+    <section id="ui-panel" class="apple-panel" aria-label="Inflation canopy controls">
       <div id="ui-handle" class="panel-drag-handle">
         <button
           id="collapseToggle"
@@ -67,26 +67,12 @@ app.innerHTML = `
               </div>
               <input id="speedSlider" type="range" min="0.1" max="4" value="1" step="0.01" />
             </label>
-            <label class="control" for="gravitySlider">
+            <label class="control" for="pressureSlider">
               <div class="control-row">
-                <span>Gravity</span>
-                <span id="gravity-value" class="value-pill">9.81 m/s^2</span>
+                <span>Pressure</span>
+                <span id="pressure-value" class="value-pill">0.42</span>
               </div>
-              <input id="gravitySlider" type="range" min="0" max="20" value="9.81" step="0.01" />
-            </label>
-            <label class="control" for="springLengthSlider">
-              <div class="control-row">
-                <span>Spring Length</span>
-                <span id="spring-length-value" class="value-pill">1.08x</span>
-              </div>
-              <input id="springLengthSlider" type="range" min="1" max="1.35" value="1.08" step="0.005" />
-            </label>
-            <label class="control" for="springStrengthSlider">
-              <div class="control-row">
-                <span>Spring Strength</span>
-                <span id="spring-strength-value" class="value-pill">0.92</span>
-              </div>
-              <input id="springStrengthSlider" type="range" min="0.1" max="2" value="0.92" step="0.01" />
+              <input id="pressureSlider" type="range" min="0" max="5" value="0.42" step="0.01" />
             </label>
           </div>
         </section>
@@ -96,17 +82,14 @@ app.innerHTML = `
           </button>
           <div class="panel-section-content panel-controls-stack">
             <div class="control-hint">
-              LMB Vertex = Toggle Anchor<br />
+              Outline corners become the fixed anchors.<br />
               LMB+Drag Anchor = Raise or Lower
             </div>
             <div class="control">
               <div class="control-row">
-                <span>Pinned Anchors</span>
+                <span>Corner Anchors</span>
                 <span id="anchor-count-value" class="value-pill">0</span>
               </div>
-            </div>
-            <div class="control">
-              <button id="clearAnchorsButton" class="pill-button control-button-wide" type="button">Clear Anchors</button>
             </div>
           </div>
         </section>
@@ -238,7 +221,6 @@ function createStudioReflectionEnvironment(renderer: THREE.WebGLRenderer): THREE
   const environmentTarget = pmremGenerator.fromEquirectangular(environmentTexture)
   environmentTexture.dispose()
   pmremGenerator.dispose()
-
   return environmentTarget
 }
 
@@ -250,18 +232,13 @@ const collapseToggle = requireElement<HTMLButtonElement>('#collapseToggle')
 const statusText = requireElement<HTMLDivElement>('#statusText')
 const startButton = requireElement<HTMLButtonElement>('#startButton')
 const resetButton = requireElement<HTMLButtonElement>('#resetButton')
-const clearAnchorsButton = requireElement<HTMLButtonElement>('#clearAnchorsButton')
 const exportObjButton = requireElement<HTMLButtonElement>('#exportObjButton')
 const exportGlbButton = requireElement<HTMLButtonElement>('#exportGlbButton')
 const exportScreenshotButton = requireElement<HTMLButtonElement>('#exportScreenshotButton')
 const speedSlider = requireElement<HTMLInputElement>('#speedSlider')
 const speedValue = requireElement<HTMLSpanElement>('#speed-value')
-const gravitySlider = requireElement<HTMLInputElement>('#gravitySlider')
-const gravityValue = requireElement<HTMLSpanElement>('#gravity-value')
-const springLengthSlider = requireElement<HTMLInputElement>('#springLengthSlider')
-const springLengthValue = requireElement<HTMLSpanElement>('#spring-length-value')
-const springStrengthSlider = requireElement<HTMLInputElement>('#springStrengthSlider')
-const springStrengthValue = requireElement<HTMLSpanElement>('#spring-strength-value')
+const pressureSlider = requireElement<HTMLInputElement>('#pressureSlider')
+const pressureValue = requireElement<HTMLSpanElement>('#pressure-value')
 const anchorCountValue = requireElement<HTMLSpanElement>('#anchor-count-value')
 const baseGridToggle = requireElement<HTMLInputElement>('#baseGridToggle')
 const wireToggle = requireElement<HTMLInputElement>('#wireToggle')
@@ -320,7 +297,6 @@ controls.maxPolarAngle = Math.PI - 0.01
 controls.mouseButtons.LEFT = -1 as THREE.MOUSE
 controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
 controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE
-controls.enabled = true
 
 const ambientLight = new THREE.HemisphereLight(0xf9fbff, 0x8b96a4, 1.2)
 scene.add(ambientLight)
@@ -382,7 +358,6 @@ scene.add(anchorHandleGroup)
 
 const outlineHandleGeometry = new THREE.CylinderGeometry(0.11, 0.11, 0.08, 20)
 const anchorHandleGeometry = new THREE.SphereGeometry(0.12, 16, 12)
-const hoverVertexGeometry = new THREE.SphereGeometry(0.08, 12, 10)
 
 const outlineHandleMaterial = new THREE.MeshStandardMaterial({
   color: 0xf3f7fb,
@@ -399,26 +374,15 @@ const anchorHandleMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.28,
   metalness: 0.06,
 })
-const hoverVertexMaterial = new THREE.MeshStandardMaterial({
-  color: 0x7ce7ff,
-  emissive: 0x102433,
-  roughness: 0.2,
-  metalness: 0.06,
-})
 
 const outlineLineMaterial = new THREE.LineBasicMaterial({ color: 0xf3f7fb })
 const invalidOutlineLineMaterial = new THREE.LineBasicMaterial({ color: 0xe05a78 })
 
-const hoverVertexMarker = new THREE.Mesh(hoverVertexGeometry, hoverVertexMaterial)
-hoverVertexMarker.visible = false
-scene.add(hoverVertexMarker)
-
 const raycaster = new THREE.Raycaster()
-raycaster.params.Points.threshold = 0.22
 const drawPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+const anchorDragPlane = new THREE.Plane()
 const pointer = new THREE.Vector2()
 const hitPoint = new THREE.Vector3()
-const anchorDragPlane = new THREE.Plane()
 const clock = new THREE.Clock()
 
 const CLICK_DRAG_THRESHOLD = 6
@@ -440,7 +404,6 @@ let draggingPanel = false
 let pendingHandleClick: PendingHandleClick | null = null
 let draggingOutlinePointId: number | null = null
 let draggingAnchorIndex: number | null = null
-let hoveredVertexIndex: number | null = null
 let showBaseGrid = baseGridToggle.checked
 let showWireframe = wireToggle.checked
 let reflectionsEnabled = reflectionToggle.checked
@@ -485,21 +448,28 @@ function rebuildOutlineVisuals(): void {
   updateOutlineValidation()
 
   if (outline.points.length >= 2) {
-    const positions: number[] = []
+    const vectors: THREE.Vector3[] = []
     for (const point of outline.points) {
-      positions.push(point.position.x, 0, point.position.y)
+      vectors.push(new THREE.Vector3(point.position.x, 0, point.position.y))
     }
 
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-    const material = outline.closed || outline.points.length >= 3
-      ? (outline.valid ? outlineLineMaterial : invalidOutlineLineMaterial)
-      : outlineLineMaterial
+    if (outline.closed && outline.points.length >= 3) {
+      vectors.push(new THREE.Vector3(outline.points[0].position.x, 0, outline.points[0].position.y))
+    }
 
-    outlineLine = outline.closed
-      ? new THREE.LineLoop(geometry, material)
-      : new THREE.Line(geometry, material)
+    const geometry = new THREE.BufferGeometry().setFromPoints(vectors)
+    const material =
+      outline.closed || outline.points.length >= 3
+        ? outline.valid
+          ? outlineLineMaterial
+          : invalidOutlineLineMaterial
+        : outlineLineMaterial
+    outlineLine = new THREE.Line(geometry, material)
     outlineGroup.add(outlineLine)
+  }
+
+  if (simulation) {
+    return
   }
 
   const firstPointId = outline.points[0]?.id ?? null
@@ -509,12 +479,12 @@ function rebuildOutlineVisuals(): void {
       point.id === firstPointId &&
       outline.points.length >= 3 &&
       validateOutline(outline.points, true).valid
+
     const handle = new THREE.Mesh(
       outlineHandleGeometry,
       isCloseHandle ? outlineCloseMaterial : outlineHandleMaterial,
     )
-    handle.rotation.x = Math.PI * 0.5
-    handle.position.set(point.position.x, 0.045, point.position.y)
+    handle.position.set(point.position.x, 0.05, point.position.y)
     handle.userData.pointId = point.id
     outlineHandleGroup.add(handle)
   }
@@ -532,16 +502,6 @@ function rebuildAnchorHandles(): void {
     handle.userData.anchorIndex = anchor.index
     anchorHandleGroup.add(handle)
   }
-}
-
-function updateHoverMarkerPosition(): void {
-  if (!simulation || hoveredVertexIndex === null || simulation.isPinned(hoveredVertexIndex)) {
-    hoverVertexMarker.visible = false
-    return
-  }
-
-  hoverVertexMarker.position.copy(simulation.getDisplayVertexPosition(hoveredVertexIndex))
-  hoverVertexMarker.visible = true
 }
 
 function pickOutlineHandle(clientX: number, clientY: number): THREE.Intersection<THREE.Object3D> | null {
@@ -564,39 +524,20 @@ function pickAnchorHandle(clientX: number, clientY: number): THREE.Intersection<
   return raycaster.intersectObjects(anchorHandleGroup.children, false)[0] ?? null
 }
 
-function pickSimulationVertex(clientX: number, clientY: number): THREE.Intersection<THREE.Object3D> | null {
-  if (!simulation) {
-    return null
-  }
-
-  updatePointer(clientX, clientY)
-  raycaster.setFromCamera(pointer, camera)
-  return raycaster.intersectObject(simulation.pickPoints, false)[0] ?? null
-}
-
 function getSpeedValue(): number {
-  return Number.parseFloat(speedSlider.value)
+  return Number.parseFloat(speedSlider.value) || 1
 }
 
-function getGravityValue(): number {
-  return Number.parseFloat(gravitySlider.value)
-}
-
-function getSpringLengthValue(): number {
-  return Number.parseFloat(springLengthSlider.value)
-}
-
-function getSpringStrengthValue(): number {
-  return Number.parseFloat(springStrengthSlider.value)
+function getPressureValue(): number {
+  return Number.parseFloat(pressureSlider.value) || 0
 }
 
 function updateRangeProgress(input: HTMLInputElement): void {
   const min = Number.parseFloat(input.min || '0')
   const max = Number.parseFloat(input.max || '1')
-  const value = Number.parseFloat(input.value)
-  const span = Math.max(max - min, 1e-6)
-  const progress = THREE.MathUtils.clamp((value - min) / span, 0, 1)
-  input.style.setProperty('--range-progress', `${(progress * 100).toFixed(3)}%`)
+  const value = Number.parseFloat(input.value || '0')
+  const progress = max <= min ? 0 : ((value - min) / (max - min)) * 100
+  input.style.setProperty('--range-progress', `${THREE.MathUtils.clamp(progress, 0, 100)}%`)
 }
 
 function addOutlinePoint(point: THREE.Vector3): void {
@@ -621,6 +562,7 @@ function updateOutlinePoint(pointId: number, point: THREE.Vector3): void {
         }
       : outlinePoint,
   )
+
   rebuildOutlineVisuals()
   refreshUiState()
 }
@@ -628,16 +570,12 @@ function updateOutlinePoint(pointId: number, point: THREE.Vector3): void {
 function buildSimulation(): void {
   disposeSimulation()
   simulation = buildCanopyFromOutline(cloneOutlinePoints(outline.points), {
-    gravity: getGravityValue(),
-    stiffness: getSpringStrengthValue(),
-    restLengthScale: getSpringLengthValue(),
+    pressure: getPressureValue(),
   })
   simulation.setWireframeVisible(showWireframe)
   simulation.setReflectionEnabled(reflectionsEnabled)
   scene.add(simulation.mesh)
-  scene.add(simulation.pickPoints)
-  hoveredVertexIndex = null
-  updateHoverMarkerPosition()
+  rebuildOutlineVisuals()
   rebuildAnchorHandles()
 }
 
@@ -653,8 +591,7 @@ function closeOutline(): void {
 
   outline.closed = true
   outline.valid = true
-  outline.error = 'Mesh generated. Click mesh points to pin anchors.'
-  rebuildOutlineVisuals()
+  outline.error = 'Mesh generated. Press Start to inflate.'
   buildSimulation()
   solverRunning = false
   refreshUiState()
@@ -665,12 +602,10 @@ function disposeSimulation(): void {
     return
   }
 
-  hoveredVertexIndex = null
-  hoverVertexMarker.visible = false
   scene.remove(simulation.mesh)
-  scene.remove(simulation.pickPoints)
   simulation.dispose()
   simulation = null
+  rebuildOutlineVisuals()
   rebuildAnchorHandles()
 }
 
@@ -683,10 +618,8 @@ function resetSimulationState(): void {
   pendingHandleClick = null
   draggingOutlinePointId = null
   draggingAnchorIndex = null
-  hoveredVertexIndex = null
   simulation.reset()
   rebuildAnchorHandles()
-  updateHoverMarkerPosition()
   refreshUiState()
 }
 
@@ -695,26 +628,14 @@ function updateSpeedLabel(): void {
   updateRangeProgress(speedSlider)
 }
 
-function updateGravityLabel(): void {
-  gravityValue.textContent = `${getGravityValue().toFixed(2)} m/s^2`
-  updateRangeProgress(gravitySlider)
-}
-
-function updateSpringLengthLabel(): void {
-  springLengthValue.textContent = `${getSpringLengthValue().toFixed(2)}x`
-  updateRangeProgress(springLengthSlider)
-}
-
-function updateSpringStrengthLabel(): void {
-  springStrengthValue.textContent = getSpringStrengthValue().toFixed(2)
-  updateRangeProgress(springStrengthSlider)
+function updatePressureLabel(): void {
+  pressureValue.textContent = getPressureValue().toFixed(2)
+  updateRangeProgress(pressureSlider)
 }
 
 function refreshUiState(): void {
   updateSpeedLabel()
-  updateGravityLabel()
-  updateSpringLengthLabel()
-  updateSpringStrengthLabel()
+  updatePressureLabel()
 
   const anchorCount = simulation?.getPinnedCount() ?? 0
   anchorCountValue.textContent = `${anchorCount}`
@@ -724,7 +645,6 @@ function refreshUiState(): void {
   startButton.classList.toggle('is-start-state', !solverRunning)
   startButton.classList.toggle('is-stop-state', solverRunning)
   startButton.disabled = !hasSimulation || anchorCount === 0
-  clearAnchorsButton.disabled = !hasSimulation || anchorCount === 0
   exportObjButton.disabled = !hasSimulation
   exportGlbButton.disabled = !hasSimulation
   exportScreenshotButton.disabled = !hasSimulation
@@ -734,18 +654,13 @@ function refreshUiState(): void {
     return
   }
 
-  if (anchorCount === 0) {
-    statusText.textContent = 'Mesh generated. Click mesh points to pin anchors, then press Start.'
-    return
-  }
-
   if (solverRunning) {
-    statusText.textContent = 'Solver running. Drag pinned anchors vertically to reshape the canopy.'
+    statusText.textContent = 'Inflating. Drag corner anchors vertically to reshape the canopy.'
     return
   }
 
   statusText.textContent =
-    'Anchors are set. Press Start, drag anchors, or tune Spring Length and Spring Strength.'
+    'Corners are fixed anchors. Press Start to inflate, or drag an anchor to change its height.'
 }
 
 function applyDisplayVisibilityState(): void {
@@ -1001,63 +916,24 @@ function isTypingInUi(): boolean {
   )
 }
 
+function clearHandleInteraction(): void {
+  pendingHandleClick = null
+  draggingOutlinePointId = null
+  draggingAnchorIndex = null
+}
+
 startButton.addEventListener('click', toggleSolver)
 resetButton.addEventListener('click', resetSimulationState)
-clearAnchorsButton.addEventListener('click', () => {
-  if (!simulation) {
-    return
-  }
-
-  simulation.clearPins()
-  solverRunning = false
-  rebuildAnchorHandles()
-  refreshUiState()
-})
 exportObjButton.addEventListener('click', exportObj)
 exportGlbButton.addEventListener('click', exportGlb)
 exportScreenshotButton.addEventListener('click', exportScreenshot)
 
-speedSlider.addEventListener('input', () => {
-  updateSpeedLabel()
-})
+speedSlider.addEventListener('input', updateSpeedLabel)
 
-gravitySlider.addEventListener('input', () => {
-  updateGravityLabel()
-  if (!simulation) {
-    return
-  }
-
-  simulation.setGravity(getGravityValue())
-  if (!solverRunning && simulation.getPinnedCount() > 0) {
-    simulation.settle(10)
-    rebuildAnchorHandles()
-  }
-})
-
-springLengthSlider.addEventListener('input', () => {
-  updateSpringLengthLabel()
-  if (!simulation) {
-    return
-  }
-
-  simulation.setRestLengthScale(getSpringLengthValue())
-  if (!solverRunning && simulation.getPinnedCount() > 0) {
-    simulation.settle(10)
-    rebuildAnchorHandles()
-  }
-})
-
-springStrengthSlider.addEventListener('input', () => {
-  updateSpringStrengthLabel()
-  if (!simulation) {
-    return
-  }
-
-  simulation.setSpringStrength(getSpringStrengthValue())
-  if (!solverRunning && simulation.getPinnedCount() > 0) {
-    simulation.settle(10)
-    rebuildAnchorHandles()
-  }
+pressureSlider.addEventListener('input', () => {
+  updatePressureLabel()
+  simulation?.setPressure(getPressureValue())
+  refreshUiState()
 })
 
 baseGridToggle.addEventListener('change', () => {
@@ -1122,19 +998,6 @@ renderer.domElement.addEventListener(
         }
         renderer.domElement.setPointerCapture(event.pointerId)
         event.stopPropagation()
-        return
-      }
-
-      const vertexHit = pickSimulationVertex(event.clientX, event.clientY)
-      if (vertexHit && typeof vertexHit.index === 'number') {
-        simulation.togglePinned(vertexHit.index)
-        if (simulation.getPinnedCount() === 0) {
-          solverRunning = false
-        }
-        updateHoverMarkerPosition()
-        rebuildAnchorHandles()
-        refreshUiState()
-        controls.enabled = true
         return
       }
 
@@ -1215,22 +1078,9 @@ renderer.domElement.addEventListener('pointermove', (event) => {
     const intersection = new THREE.Vector3()
     if (raycaster.ray.intersectPlane(anchorDragPlane, intersection)) {
       simulation.setPinnedVertexDisplayHeight(draggingAnchorIndex, intersection.y)
-      if (!solverRunning && simulation.getPinnedCount() > 0) {
-        simulation.settle(4)
-      }
       rebuildAnchorHandles()
-      updateHoverMarkerPosition()
     }
-    return
   }
-
-  if (!simulation) {
-    return
-  }
-
-  const vertexHit = pickSimulationVertex(event.clientX, event.clientY)
-  hoveredVertexIndex = vertexHit && typeof vertexHit.index === 'number' ? vertexHit.index : null
-  updateHoverMarkerPosition()
 })
 
 renderer.domElement.addEventListener('pointerup', (event) => {
@@ -1264,20 +1114,8 @@ renderer.domElement.addEventListener('pointerup', (event) => {
       event.clientY - pendingHandleClick.clientY,
     )
 
-    if (dragDistance <= CLICK_DRAG_THRESHOLD) {
-      if (pendingHandleClick.type === 'outline' && pendingHandleClick.canClose) {
-        closeOutline()
-      } else if (pendingHandleClick.type === 'anchor' && simulation) {
-        const anchorIndex = pendingHandleClick.anchorIndex ?? -1
-        if (anchorIndex >= 0) {
-          simulation.togglePinned(anchorIndex)
-          if (simulation.getPinnedCount() === 0) {
-            solverRunning = false
-          }
-          rebuildAnchorHandles()
-          refreshUiState()
-        }
-      }
+    if (dragDistance <= CLICK_DRAG_THRESHOLD && pendingHandleClick.type === 'outline' && pendingHandleClick.canClose) {
+      closeOutline()
     }
 
     pendingHandleClick = null
@@ -1292,9 +1130,8 @@ renderer.domElement.addEventListener('pointercancel', (event) => {
   if (renderer.domElement.hasPointerCapture(event.pointerId)) {
     renderer.domElement.releasePointerCapture(event.pointerId)
   }
-  pendingHandleClick = null
-  draggingOutlinePointId = null
-  draggingAnchorIndex = null
+
+  clearHandleInteraction()
   controls.enabled = true
 })
 
@@ -1368,19 +1205,17 @@ function animate(): void {
   groundGrid.update(camera)
 
   if (simulation && solverRunning) {
+    simulation.setPressure(getPressureValue())
     simulation.update(deltaTime * getSpeedValue())
   }
 
-  updateHoverMarkerPosition()
   renderer.render(scene, camera)
 }
 
 rebuildOutlineVisuals()
 bindSectionCollapses()
 updateSpeedLabel()
-updateGravityLabel()
-updateSpringLengthLabel()
-updateSpringStrengthLabel()
+updatePressureLabel()
 applyDisplayVisibilityState()
 applyReflectionState()
 refreshUiState()
@@ -1396,11 +1231,9 @@ window.addEventListener('beforeunload', () => {
   groundGrid.dispose()
   outlineHandleGeometry.dispose()
   anchorHandleGeometry.dispose()
-  hoverVertexGeometry.dispose()
   outlineHandleMaterial.dispose()
   outlineCloseMaterial.dispose()
   anchorHandleMaterial.dispose()
-  hoverVertexMaterial.dispose()
   outlineLineMaterial.dispose()
   invalidOutlineLineMaterial.dispose()
   renderer.dispose()

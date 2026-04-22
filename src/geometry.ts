@@ -26,6 +26,9 @@ export interface FlatMeshData {
   vertices: THREE.Vector2[]
   triangles: TriangleIndices[]
   boundaryVertexIndices: Set<number>
+  stitchedVertexIndices: Set<number>
+  seamPath: THREE.Vector2[]
+  cornerVertexIndices: number[]
   area: number
 }
 
@@ -135,6 +138,9 @@ export function buildFlatMeshData(points: readonly OutlinePoint[]): FlatMeshData
   const vertices: THREE.Vector2[] = []
   const boundaryVertexIndices = new Set<number>()
   appendUniqueVertices(vertices, sampledContour, boundaryVertexIndices)
+  const cornerVertexIndices = contour
+    .map((corner) => findExistingVertexIndex(vertices, corner))
+    .filter((index) => index >= 0)
 
   const interiorPoints = generateInteriorPoints(sampledContour, targetSpacing)
   appendUniqueVertices(vertices, interiorPoints)
@@ -146,6 +152,9 @@ export function buildFlatMeshData(points: readonly OutlinePoint[]): FlatMeshData
     vertices,
     triangles,
     boundaryVertexIndices,
+    stitchedVertexIndices: new Set(boundaryVertexIndices),
+    seamPath: sampledContour.map((point) => point.clone()),
+    cornerVertexIndices,
     area,
   }
 }

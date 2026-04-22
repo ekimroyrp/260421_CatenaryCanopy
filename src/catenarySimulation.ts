@@ -10,7 +10,6 @@ import {
 interface SpringConstraint {
   a: number
   b: number
-  baseLength: number
   restLength: number
   stiffness: number
 }
@@ -34,50 +33,63 @@ interface CanopyMaterialStyle {
   eggIridescenceFrequency: number
 }
 
+interface VertexStencil {
+  indices: number[]
+  weights: number[]
+}
+
+interface RenderTopology {
+  vertexStencils: VertexStencil[]
+  triangles: TriangleIndices[]
+  indices: number[]
+  wireEdgePairs: number[]
+  creaseVertices: boolean[]
+  creaseEdges: Set<string>
+}
+
 export interface AnchorVertex {
   index: number
-  pinned: boolean
   position: THREE.Vector3
 }
 
 export interface CanopySimulationParams {
-  gravity: number
+  pressure: number
+  pressureScale: number
+  pressureResponse: number
   damping: number
   substeps: number
   constraintIterations: number
   stiffness: number
-  restLengthScale: number
-  compressionResistance: number
   maxDeltaTime: number
-  pointPickSize: number
+  displaySubdivisionLevel: number
 }
 
 export interface CanopySimulationState {
-  gravity: number
+  currentPressure: number
+  targetPressure: number
   positions: THREE.Vector3[]
-  previousPositions: THREE.Vector3[]
   velocities: THREE.Vector3[]
-  restPositions: THREE.Vector3[]
+  basePositions: THREE.Vector3[]
   pinnedTargets: THREE.Vector3[]
-  triangles: TriangleIndices[]
+  anchorIndices: number[]
   springs: SpringConstraint[]
+  triangles: TriangleIndices[]
   geometry: THREE.BufferGeometry
 }
 
 const DEFAULT_PARAMS: CanopySimulationParams = {
-  gravity: 9.81,
+  pressure: 0.42,
+  pressureScale: 26,
+  pressureResponse: 1.9,
   damping: 4.2,
-  substeps: 4,
+  substeps: 5,
   constraintIterations: 10,
-  stiffness: 0.92,
-  restLengthScale: 1.08,
-  compressionResistance: 0.18,
+  stiffness: 0.76,
   maxDeltaTime: 1 / 24,
-  pointPickSize: 0.14,
+  displaySubdivisionLevel: 1,
 }
 
-const WIRE_SURFACE_OFFSET = 0.004
-const VERTEX_SURFACE_OFFSET = 0.014
+const WIRE_SURFACE_OFFSET = 0.008
 const FOIL_MATERIAL_STYLE: CanopyMaterialStyle = {
   color: 0xf1f5ff,
   metalness: 1,
@@ -118,16 +130,18 @@ const MATTE_MATERIAL_STYLE: CanopyMaterialStyle = {
 
 export class CanopySimulation {
   readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>
-  readonly pickPoints: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>
   readonly flatMesh: FlatMeshData
   readonly state: CanopySimulationState
 
+  private displaySubdivisionLevel: number
   private readonly params: CanopySimulationParams
   private readonly pinnedMask: boolean[]
-  private readonly wireEdgePairs: number[]
+  private readonly forces: THREE.Vector3[]
+  private readonly previousPositions: THREE.Vector3[]
+  private readonly coarseRenderTopology: RenderTopology
+  private readonly renderTopologyCache = new Map<number, RenderTopology>()
+  private wireEdgePairs: number[] = []
   private readonly wireOverlay: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>
-  private readonly tempVectorA = new THREE.Vector3()
-  private readonly tempVectorB = new THREE.Vector3()
   private readonly eggIridescenceState: {
     strength: number
     frequency: number
@@ -138,6 +152,7 @@ export class CanopySimulation {
           uEggIridescenceFrequency: { value: number }
         }
   }
+  private readonly tempVectorA = new THREE.Vector3()
 
   constructor(outline: readonly OutlinePoint[], params: Partial<CanopySimulationParams> = {}) {
     this.params = {
@@ -146,47 +161,40 @@ export class CanopySimulation {
     }
 
     this.flatMesh = buildFlatMeshData(outline)
-
-    const restPositions = this.flatMesh.vertices.map(
-      (vertex) => new THREE.Vector3(vertex.x, 0, vertex.y),
-    )
-    const positions = restPositions.map((position) => position.clone())
-    const previousPositions = restPositions.map((position) => position.clone())
-    const velocities = restPositions.map(() => new THREE.Vector3())
-    const pinnedTargets = restPositions.map((position) => position.clone())
-    const springs = buildSpringConstraints(
-      this.flatMesh.triangles,
-      restPositions,
-      this.params.stiffness,
-      this.params.restLengthScale,
-    )
-
+    const simData = createSimulationTopology(this.flatMesh, this.params)
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(restPositions.length * 3), 3),
-    )
-    geometry.setIndex(this.flatMesh.triangles.flat())
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+    geometry.setIndex([])
 
     this.state = {
-      gravity: this.params.gravity,
-      positions,
-      previousPositions,
-      velocities,
-      restPositions,
-      pinnedTargets,
-      triangles: this.flatMesh.triangles,
-      springs,
+      currentPressure: 0,
+      targetPressure: this.params.pressure,
+      positions: simData.positions,
+      velocities: simData.velocities,
+      basePositions: simData.basePositions,
+      pinnedTargets: simData.pinnedTargets,
+      anchorIndices: simData.anchorIndices,
+      springs: simData.springs,
+      triangles: simData.triangles,
       geometry,
     }
 
-    this.pinnedMask = restPositions.map(() => false)
-    this.wireEdgePairs = buildWireEdgePairs(this.flatMesh.triangles)
+    this.displaySubdivisionLevel = Math.max(0, Math.round(this.params.displaySubdivisionLevel))
+    this.pinnedMask = simData.pinnedMask
+    this.forces = simData.positions.map(() => new THREE.Vector3())
+    this.previousPositions = simData.positions.map((position) => position.clone())
     this.eggIridescenceState = {
       strength: FOIL_MATERIAL_STYLE.eggIridescence,
       frequency: FOIL_MATERIAL_STYLE.eggIridescenceFrequency,
       uniforms: null,
     }
+
+    this.coarseRenderTopology = buildBaseRenderTopology(
+      simData.positions.length,
+      simData.triangles,
+      this.flatMesh.boundaryVertexIndices,
+    )
+    this.renderTopologyCache.set(0, this.coarseRenderTopology)
 
     this.mesh = new THREE.Mesh(
       geometry,
@@ -214,10 +222,7 @@ export class CanopySimulation {
     this.installEggIridescenceShader()
 
     const wireGeometry = new THREE.BufferGeometry()
-    wireGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(this.wireEdgePairs.length * 3), 3),
-    )
+    wireGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
     this.wireOverlay = new THREE.LineSegments(
       wireGeometry,
       new THREE.LineBasicMaterial({
@@ -236,26 +241,7 @@ export class CanopySimulation {
     this.mesh.receiveShadow = false
     this.mesh.userData.simulation = this
 
-    const pickGeometry = new THREE.BufferGeometry()
-    pickGeometry.setAttribute(
-      'position',
-      this.state.geometry.getAttribute('position'),
-    )
-    this.pickPoints = new THREE.Points(
-      pickGeometry,
-      new THREE.PointsMaterial({
-        size: this.params.pointPickSize * 0.72,
-        sizeAttenuation: true,
-        color: 0xd8ebff,
-        transparent: true,
-        opacity: 0.44,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-    )
-    this.pickPoints.frustumCulled = false
-    this.pickPoints.renderOrder = 2
-
+    this.rebuildRenderGeometry()
     this.syncGeometry()
   }
 
@@ -273,141 +259,68 @@ export class CanopySimulation {
     this.syncGeometry()
   }
 
-  settle(frames = 8, deltaTime = 1 / 60): void {
-    const safeFrames = Math.max(1, Math.round(frames))
-    for (let frame = 0; frame < safeFrames; frame += 1) {
-      this.update(deltaTime)
-    }
+  setPressure(pressure: number): void {
+    this.state.targetPressure = THREE.MathUtils.clamp(pressure, 0, 5)
   }
 
   reset(): void {
+    this.state.currentPressure = 0
+
     for (let index = 0; index < this.state.positions.length; index += 1) {
       const resetPosition = this.pinnedMask[index]
         ? this.state.pinnedTargets[index]
-        : this.state.restPositions[index]
+        : this.state.basePositions[index]
 
       this.state.positions[index].copy(resetPosition)
-      this.state.previousPositions[index].copy(resetPosition)
       this.state.velocities[index].set(0, 0, 0)
-      if (!this.pinnedMask[index]) {
-        this.state.pinnedTargets[index].copy(this.state.restPositions[index])
-      }
+      this.previousPositions[index].copy(resetPosition)
     }
 
     this.syncGeometry()
   }
 
-  setGravity(gravity: number): void {
-    this.state.gravity = Math.max(0, gravity)
-  }
-
-  setRestLengthScale(scale: number): void {
-    const nextScale = THREE.MathUtils.clamp(scale, 1, 1.5)
-    this.params.restLengthScale = nextScale
-    for (const spring of this.state.springs) {
-      spring.restLength = spring.baseLength * nextScale
-    }
-  }
-
-  setSpringStrength(strength: number): void {
-    const nextStrength = THREE.MathUtils.clamp(strength, 0.1, 2)
-    this.params.stiffness = nextStrength
-    for (const spring of this.state.springs) {
-      spring.stiffness = nextStrength
-    }
-  }
-
-  setPinned(index: number, pinned: boolean): void {
-    if (index < 0 || index >= this.pinnedMask.length) {
-      return
-    }
-
-    if (this.pinnedMask[index] === pinned) {
-      return
-    }
-
-    this.pinnedMask[index] = pinned
-    if (pinned) {
-      this.state.pinnedTargets[index].copy(this.state.positions[index])
-      this.state.previousPositions[index].copy(this.state.positions[index])
-      this.state.velocities[index].set(0, 0, 0)
-    } else {
-      this.state.previousPositions[index].copy(this.state.positions[index])
-      this.state.velocities[index].set(0, 0, 0)
-    }
-  }
-
-  togglePinned(index: number): boolean {
-    this.setPinned(index, !this.isPinned(index))
-    return this.isPinned(index)
-  }
-
-  clearPins(): void {
-    for (let index = 0; index < this.pinnedMask.length; index += 1) {
-      this.pinnedMask[index] = false
-      this.state.previousPositions[index].copy(this.state.positions[index])
-      this.state.velocities[index].set(0, 0, 0)
-    }
-  }
-
-  isPinned(index: number): boolean {
-    return this.pinnedMask[index] ?? false
-  }
-
   getPinnedCount(): number {
-    let count = 0
-    for (const pinned of this.pinnedMask) {
-      if (pinned) {
-        count += 1
-      }
-    }
-
-    return count
-  }
-
-  getVertexCount(): number {
-    return this.state.positions.length
+    return this.state.anchorIndices.length
   }
 
   getAnchorVertices(): AnchorVertex[] {
-    const anchors: AnchorVertex[] = []
-
-    for (let index = 0; index < this.state.positions.length; index += 1) {
-      if (!this.pinnedMask[index]) {
-        continue
-      }
-
-      anchors.push({
-        index,
-        pinned: true,
-        position: this.getDisplayVertexPosition(index),
-      })
-    }
-
-    return anchors
+    return this.state.anchorIndices.map((index) => ({
+      index,
+      position: this.getDisplayVertexPosition(index),
+    }))
   }
 
   getDisplayVertexPosition(index: number, target = new THREE.Vector3()): THREE.Vector3 {
-    return target.copy(this.state.positions[index]).setY(-this.state.positions[index].y)
+    return target.copy(this.state.positions[index])
   }
 
   setPinnedVertexDisplayHeight(index: number, displayHeight: number): void {
-    if (!this.isPinned(index)) {
+    if (!this.pinnedMask[index]) {
       return
     }
 
-    const restPosition = this.state.restPositions[index]
-    const nextHeight = THREE.MathUtils.clamp(displayHeight, -20, 20)
-    const solverTarget = this.state.pinnedTargets[index]
-    solverTarget.set(restPosition.x, -nextHeight, restPosition.z)
-    this.state.positions[index].copy(solverTarget)
-    this.state.previousPositions[index].copy(solverTarget)
+    const restPosition = this.state.basePositions[index]
+    const nextTarget = this.state.pinnedTargets[index]
+    nextTarget.set(restPosition.x, THREE.MathUtils.clamp(displayHeight, -20, 20), restPosition.z)
+    this.state.positions[index].copy(nextTarget)
+    this.previousPositions[index].copy(nextTarget)
     this.state.velocities[index].set(0, 0, 0)
     this.syncGeometry()
   }
 
   setWireframeVisible(visible: boolean): void {
     this.wireOverlay.visible = visible
+  }
+
+  setSubdivisionLevel(level: number): void {
+    const nextLevel = Math.max(0, Math.round(level))
+    if (this.displaySubdivisionLevel === nextLevel) {
+      return
+    }
+
+    this.displaySubdivisionLevel = nextLevel
+    this.rebuildRenderGeometry()
+    this.syncGeometry()
   }
 
   setReflectionEnabled(enabled: boolean): void {
@@ -419,43 +332,41 @@ export class CanopySimulation {
     this.mesh.material.dispose()
     this.wireOverlay.geometry.dispose()
     this.wireOverlay.material.dispose()
-    this.pickPoints.geometry.dispose()
-    this.pickPoints.material.dispose()
   }
 
   private step(deltaTime: number): void {
-    const gravityStep = this.state.gravity * deltaTime * deltaTime
-    const dampingFactor = Math.exp(-this.params.damping * deltaTime)
+    this.state.currentPressure = THREE.MathUtils.damp(
+      this.state.currentPressure,
+      this.state.targetPressure,
+      this.params.pressureResponse,
+      deltaTime,
+    )
 
+    for (let index = 0; index < this.state.positions.length; index += 1) {
+      this.previousPositions[index].copy(this.state.positions[index])
+      this.forces[index].set(0, 0, 0)
+    }
+
+    this.applyUniformLiftForces()
+
+    const dampingFactor = Math.exp(-this.params.damping * deltaTime)
     for (let index = 0; index < this.state.positions.length; index += 1) {
       if (this.pinnedMask[index]) {
         this.state.positions[index].copy(this.state.pinnedTargets[index])
-        this.state.previousPositions[index].copy(this.state.pinnedTargets[index])
-        this.state.velocities[index].set(0, 0, 0)
         continue
       }
 
-      const current = this.state.positions[index]
-      const previous = this.state.previousPositions[index]
-      this.tempVectorA.copy(current)
-      this.tempVectorB.copy(current).sub(previous).multiplyScalar(dampingFactor)
-      current.add(this.tempVectorB)
-      current.y -= gravityStep
-      previous.copy(this.tempVectorA)
+      this.state.velocities[index].addScaledVector(this.forces[index], deltaTime)
+      this.state.velocities[index].multiplyScalar(dampingFactor)
+      this.state.positions[index].addScaledVector(this.state.velocities[index], deltaTime)
     }
 
     for (let iteration = 0; iteration < this.params.constraintIterations; iteration += 1) {
-      for (const spring of this.state.springs) {
-        this.solveSpring(spring)
-      }
-
-      for (let index = 0; index < this.state.positions.length; index += 1) {
-        if (this.pinnedMask[index]) {
-          this.state.positions[index].copy(this.state.pinnedTargets[index])
-        }
-      }
+      this.solveSpringConstraints()
+      this.enforcePinnedTargets()
     }
 
+    const inverseDelta = deltaTime > 0 ? 1 / deltaTime : 0
     for (let index = 0; index < this.state.positions.length; index += 1) {
       if (this.pinnedMask[index]) {
         this.state.velocities[index].set(0, 0, 0)
@@ -464,110 +375,57 @@ export class CanopySimulation {
 
       this.state.velocities[index]
         .copy(this.state.positions[index])
-        .sub(this.state.previousPositions[index])
-        .multiplyScalar(1 / Math.max(deltaTime, 1e-6))
+        .sub(this.previousPositions[index])
+        .multiplyScalar(inverseDelta)
     }
   }
 
-  private solveSpring(spring: SpringConstraint): void {
-    const positionA = this.state.positions[spring.a]
-    const positionB = this.state.positions[spring.b]
-    const delta = this.tempVectorA.copy(positionB).sub(positionA)
-    const distance = delta.length()
-
-    if (distance < 1e-6) {
+  private applyUniformLiftForces(): void {
+    const strength = this.state.currentPressure * this.params.pressureScale
+    if (strength < 1e-5) {
       return
     }
-
-    const error = (distance - spring.restLength) / distance
-    let correctionScale = error * spring.stiffness
-    if (distance < spring.restLength) {
-      correctionScale *= this.params.compressionResistance
-    }
-    const pinnedA = this.pinnedMask[spring.a]
-    const pinnedB = this.pinnedMask[spring.b]
-
-    if (pinnedA && pinnedB) {
-      return
-    }
-
-    if (!pinnedA && !pinnedB) {
-      delta.multiplyScalar(0.5 * correctionScale)
-      positionA.add(delta)
-      positionB.sub(delta)
-      return
-    }
-
-    delta.multiplyScalar(correctionScale)
-    if (pinnedA) {
-      positionB.sub(delta)
-    } else {
-      positionA.add(delta)
-    }
-  }
-
-  private syncGeometry(): void {
-    const positionAttribute = this.state.geometry.getAttribute('position') as THREE.BufferAttribute
 
     for (let index = 0; index < this.state.positions.length; index += 1) {
-      const position = this.state.positions[index]
-      positionAttribute.setXYZ(index, position.x, -position.y, position.z)
-    }
+      if (this.pinnedMask[index]) {
+        continue
+      }
 
-    positionAttribute.needsUpdate = true
-    this.state.geometry.computeVertexNormals()
-    this.state.geometry.computeBoundingSphere()
-    this.syncPickGeometry(positionAttribute)
-    this.syncWireGeometry(positionAttribute)
+      this.forces[index].y += strength
+    }
   }
 
-  private syncPickGeometry(positionAttribute: THREE.BufferAttribute): void {
-    const pointPositionAttribute = this.pickPoints.geometry.getAttribute('position') as THREE.BufferAttribute
-    const normalAttribute = this.state.geometry.getAttribute('normal') as THREE.BufferAttribute | undefined
+  private solveSpringConstraints(): void {
+    for (const spring of this.state.springs) {
+      const positionA = this.state.positions[spring.a]
+      const positionB = this.state.positions[spring.b]
+      this.tempVectorA.subVectors(positionB, positionA)
+      const currentLength = this.tempVectorA.length()
 
-    for (let index = 0; index < this.state.positions.length; index += 1) {
-      const positionX = positionAttribute.getX(index)
-      const positionY = positionAttribute.getY(index)
-      const positionZ = positionAttribute.getZ(index)
-      const normalX = normalAttribute ? normalAttribute.getX(index) : 0
-      const normalY = normalAttribute ? normalAttribute.getY(index) : 1
-      const normalZ = normalAttribute ? normalAttribute.getZ(index) : 0
+      if (currentLength < 1e-6) {
+        continue
+      }
 
-      pointPositionAttribute.setXYZ(
-        index,
-        positionX + normalX * VERTEX_SURFACE_OFFSET,
-        positionY + normalY * VERTEX_SURFACE_OFFSET,
-        positionZ + normalZ * VERTEX_SURFACE_OFFSET,
-      )
+      const stretch = (currentLength - spring.restLength) / currentLength
+      const correction = this.tempVectorA.multiplyScalar(stretch * spring.stiffness)
+      const pinnedA = this.pinnedMask[spring.a]
+      const pinnedB = this.pinnedMask[spring.b]
+
+      if (!pinnedA && !pinnedB) {
+        positionA.addScaledVector(correction, 0.5)
+        positionB.addScaledVector(correction, -0.5)
+      } else if (!pinnedA) {
+        positionA.add(correction)
+      } else if (!pinnedB) {
+        positionB.addScaledVector(correction, -1)
+      }
     }
-
-    pointPositionAttribute.needsUpdate = true
-    this.pickPoints.geometry.computeBoundingSphere()
   }
 
-  private syncWireGeometry(positionAttribute: THREE.BufferAttribute): void {
-    const wirePositionAttribute = this.wireOverlay.geometry.getAttribute('position') as THREE.BufferAttribute
-    const normalAttribute = this.state.geometry.getAttribute('normal') as THREE.BufferAttribute | undefined
-
-    for (let index = 0; index < this.wireEdgePairs.length; index += 1) {
-      const vertexIndex = this.wireEdgePairs[index]
-      const positionX = positionAttribute.getX(vertexIndex)
-      const positionY = positionAttribute.getY(vertexIndex)
-      const positionZ = positionAttribute.getZ(vertexIndex)
-      const normalX = normalAttribute ? normalAttribute.getX(vertexIndex) : 0
-      const normalY = normalAttribute ? normalAttribute.getY(vertexIndex) : 1
-      const normalZ = normalAttribute ? normalAttribute.getZ(vertexIndex) : 0
-
-      wirePositionAttribute.setXYZ(
-        index,
-        positionX + normalX * WIRE_SURFACE_OFFSET,
-        positionY + normalY * WIRE_SURFACE_OFFSET,
-        positionZ + normalZ * WIRE_SURFACE_OFFSET,
-      )
+  private enforcePinnedTargets(): void {
+    for (const anchorIndex of this.state.anchorIndices) {
+      this.state.positions[anchorIndex].copy(this.state.pinnedTargets[anchorIndex])
     }
-
-    wirePositionAttribute.needsUpdate = true
-    this.wireOverlay.geometry.computeBoundingSphere()
   }
 
   private applyMaterialStyle(style: CanopyMaterialStyle): void {
@@ -596,7 +454,7 @@ export class CanopySimulation {
   }
 
   private installEggIridescenceShader(): void {
-    this.mesh.material.customProgramCacheKey = () => 'canopy-egg-iridescence-v1'
+    this.mesh.material.customProgramCacheKey = () => 'canopy-single-surface-egg-iridescence-v1'
     this.mesh.material.onBeforeCompile = (shader) => {
       const uniforms = {
         uEggIridescence: { value: this.eggIridescenceState.strength },
@@ -737,6 +595,96 @@ diffuseColor.rgb = applyEggIridescence(diffuseColor.rgb);`,
         )
     }
   }
+
+  private getRenderTopology(level: number): RenderTopology {
+    const targetLevel = Math.max(0, Math.round(level))
+    if (this.renderTopologyCache.has(targetLevel)) {
+      return this.renderTopologyCache.get(targetLevel)!
+    }
+
+    for (let currentLevel = 1; currentLevel <= targetLevel; currentLevel += 1) {
+      if (this.renderTopologyCache.has(currentLevel)) {
+        continue
+      }
+
+      const previousLevel = this.renderTopologyCache.get(currentLevel - 1)
+      if (!previousLevel) {
+        throw new Error(`Missing subdivision topology for level ${currentLevel - 1}.`)
+      }
+
+      let nextLevelTopology = subdivideRenderTopology(previousLevel)
+      nextLevelTopology = smoothRenderTopology(nextLevelTopology, currentLevel, 0.18)
+      this.renderTopologyCache.set(currentLevel, nextLevelTopology)
+    }
+
+    return this.renderTopologyCache.get(targetLevel)!
+  }
+
+  private rebuildRenderGeometry(): void {
+    const topology = this.getRenderTopology(this.displaySubdivisionLevel)
+    this.wireEdgePairs = topology.wireEdgePairs
+    this.state.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(topology.vertexStencils.length * 3), 3),
+    )
+    this.state.geometry.setIndex(topology.indices)
+    this.state.geometry.deleteAttribute('normal')
+
+    this.wireOverlay.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(this.wireEdgePairs.length * 3), 3),
+    )
+  }
+
+  private syncGeometry(): void {
+    const topology = this.getRenderTopology(this.displaySubdivisionLevel)
+    const positionAttribute = this.state.geometry.getAttribute('position') as THREE.BufferAttribute
+
+    for (let index = 0; index < topology.vertexStencils.length; index += 1) {
+      const stencil = topology.vertexStencils[index]
+      let x = 0
+      let y = 0
+      let z = 0
+
+      for (let weightIndex = 0; weightIndex < stencil.indices.length; weightIndex += 1) {
+        const sourceIndex = stencil.indices[weightIndex]
+        const sourcePosition = this.state.positions[sourceIndex]
+        const weight = stencil.weights[weightIndex]
+        x += sourcePosition.x * weight
+        y += sourcePosition.y * weight
+        z += sourcePosition.z * weight
+      }
+
+      positionAttribute.setXYZ(index, x, y, z)
+    }
+
+    positionAttribute.needsUpdate = true
+    this.state.geometry.computeVertexNormals()
+    this.state.geometry.computeBoundingSphere()
+
+    const normalAttribute = this.state.geometry.getAttribute('normal') as THREE.BufferAttribute
+    const wirePositionAttribute = this.wireOverlay.geometry.getAttribute('position') as THREE.BufferAttribute
+
+    for (let index = 0; index < this.wireEdgePairs.length; index += 1) {
+      const vertexIndex = this.wireEdgePairs[index]
+      const positionX = positionAttribute.getX(vertexIndex)
+      const positionY = positionAttribute.getY(vertexIndex)
+      const positionZ = positionAttribute.getZ(vertexIndex)
+      const normalX = normalAttribute.getX(vertexIndex)
+      const normalY = normalAttribute.getY(vertexIndex)
+      const normalZ = normalAttribute.getZ(vertexIndex)
+
+      wirePositionAttribute.setXYZ(
+        index,
+        positionX + normalX * WIRE_SURFACE_OFFSET,
+        positionY + normalY * WIRE_SURFACE_OFFSET,
+        positionZ + normalZ * WIRE_SURFACE_OFFSET,
+      )
+    }
+
+    wirePositionAttribute.needsUpdate = true
+    this.wireOverlay.geometry.computeBoundingSphere()
+  }
 }
 
 export function buildCanopyFromOutline(
@@ -746,22 +694,88 @@ export function buildCanopyFromOutline(
   return new CanopySimulation(outline, params)
 }
 
+function createSimulationTopology(flatMesh: FlatMeshData, params: CanopySimulationParams): {
+  positions: THREE.Vector3[]
+  velocities: THREE.Vector3[]
+  basePositions: THREE.Vector3[]
+  pinnedTargets: THREE.Vector3[]
+  anchorIndices: number[]
+  springs: SpringConstraint[]
+  triangles: TriangleIndices[]
+  pinnedMask: boolean[]
+} {
+  const positions: THREE.Vector3[] = []
+  const velocities: THREE.Vector3[] = []
+  const basePositions: THREE.Vector3[] = []
+  const pinnedTargets: THREE.Vector3[] = []
+  const pinnedMask: boolean[] = []
+  const anchorIndices: number[] = []
+  const cornerVertexSet = new Set(flatMesh.cornerVertexIndices)
+
+  for (let index = 0; index < flatMesh.vertices.length; index += 1) {
+    const vertex = flatMesh.vertices[index]
+    const basePosition = new THREE.Vector3(vertex.x, 0, vertex.y)
+    const pinned = cornerVertexSet.has(index)
+
+    positions.push(basePosition.clone())
+    velocities.push(new THREE.Vector3())
+    basePositions.push(basePosition.clone())
+    pinnedTargets.push(basePosition.clone())
+    pinnedMask.push(pinned)
+    if (pinned) {
+      anchorIndices.push(index)
+    }
+  }
+
+  return {
+    positions,
+    velocities,
+    basePositions,
+    pinnedTargets,
+    anchorIndices,
+    springs: buildSpringConstraints(flatMesh.triangles, positions, params.stiffness),
+    triangles: flatMesh.triangles.map(
+      ([indexA, indexB, indexC]) => [indexA, indexB, indexC] satisfies TriangleIndices,
+    ),
+    pinnedMask,
+  }
+}
+
 function buildSpringConstraints(
   triangles: readonly TriangleIndices[],
   positions: readonly THREE.Vector3[],
   stiffness: number,
-  restLengthScale: number,
 ): SpringConstraint[] {
   const edgeMap = new Map<string, SpringConstraint>()
 
   const addTriangleEdges = ([indexA, indexB, indexC]: TriangleIndices): void => {
-    addEdge(edgeMap, indexA, indexB, positions, stiffness, restLengthScale)
-    addEdge(edgeMap, indexB, indexC, positions, stiffness, restLengthScale)
-    addEdge(edgeMap, indexC, indexA, positions, stiffness, restLengthScale)
+    addEdge(edgeMap, indexA, indexB, positions, stiffness)
+    addEdge(edgeMap, indexB, indexC, positions, stiffness)
+    addEdge(edgeMap, indexC, indexA, positions, stiffness)
   }
 
   triangles.forEach(addTriangleEdges)
   return [...edgeMap.values()]
+}
+
+function addEdge(
+  edgeMap: Map<string, SpringConstraint>,
+  indexA: number,
+  indexB: number,
+  positions: readonly THREE.Vector3[],
+  stiffness: number,
+): void {
+  const edgeKey = indexA < indexB ? `${indexA}:${indexB}` : `${indexB}:${indexA}`
+  if (edgeMap.has(edgeKey)) {
+    return
+  }
+
+  edgeMap.set(edgeKey, {
+    a: indexA,
+    b: indexB,
+    restLength: positions[indexA].distanceTo(positions[indexB]),
+    stiffness,
+  })
 }
 
 function buildWireEdgePairs(triangles: readonly TriangleIndices[]): number[] {
@@ -786,25 +800,300 @@ function buildWireEdgePairs(triangles: readonly TriangleIndices[]): number[] {
   return [...edgeMap.values()].flat()
 }
 
-function addEdge(
-  edgeMap: Map<string, SpringConstraint>,
-  indexA: number,
-  indexB: number,
-  positions: readonly THREE.Vector3[],
-  stiffness: number,
-  restLengthScale: number,
-): void {
-  const edgeKey = indexA < indexB ? `${indexA}:${indexB}` : `${indexB}:${indexA}`
-  if (edgeMap.has(edgeKey)) {
-    return
+function makeEdgeKey(indexA: number, indexB: number): string {
+  return indexA < indexB ? `${indexA}:${indexB}` : `${indexB}:${indexA}`
+}
+
+function cloneVertexStencil(stencil: VertexStencil): VertexStencil {
+  return {
+    indices: [...stencil.indices],
+    weights: [...stencil.weights],
+  }
+}
+
+function buildBaseRenderTopology(
+  vertexCount: number,
+  triangles: readonly TriangleIndices[],
+  creaseVertexSet: ReadonlySet<number>,
+): RenderTopology {
+  const nextTriangles = triangles.map(
+    ([indexA, indexB, indexC]) => [indexA, indexB, indexC] satisfies TriangleIndices,
+  )
+  const creaseVertices = Array.from({ length: vertexCount }, (_, index) => creaseVertexSet.has(index))
+  const creaseEdges = new Set<string>()
+
+  for (const [indexA, indexB, indexC] of nextTriangles) {
+    if (creaseVertices[indexA] && creaseVertices[indexB]) {
+      creaseEdges.add(makeEdgeKey(indexA, indexB))
+    }
+    if (creaseVertices[indexB] && creaseVertices[indexC]) {
+      creaseEdges.add(makeEdgeKey(indexB, indexC))
+    }
+    if (creaseVertices[indexC] && creaseVertices[indexA]) {
+      creaseEdges.add(makeEdgeKey(indexC, indexA))
+    }
   }
 
-  const baseLength = positions[indexA].distanceTo(positions[indexB])
-  edgeMap.set(edgeKey, {
-    a: indexA,
-    b: indexB,
-    baseLength,
-    restLength: baseLength * restLengthScale,
-    stiffness,
-  })
+  return {
+    vertexStencils: Array.from({ length: vertexCount }, (_, index) => ({
+      indices: [index],
+      weights: [1],
+    })),
+    triangles: nextTriangles,
+    indices: nextTriangles.flat(),
+    wireEdgePairs: buildWireEdgePairs(nextTriangles),
+    creaseVertices,
+    creaseEdges,
+  }
+}
+
+function buildTopologyAdjacency(
+  triangles: readonly TriangleIndices[],
+  vertexCount: number,
+): number[][] {
+  const adjacency = Array.from({ length: vertexCount }, () => new Set<number>())
+
+  for (const [indexA, indexB, indexC] of triangles) {
+    adjacency[indexA].add(indexB)
+    adjacency[indexA].add(indexC)
+    adjacency[indexB].add(indexA)
+    adjacency[indexB].add(indexC)
+    adjacency[indexC].add(indexA)
+    adjacency[indexC].add(indexB)
+  }
+
+  return adjacency.map((neighbors) => [...neighbors])
+}
+
+function combineVertexStencils(
+  entries: readonly { stencil: VertexStencil; weight: number }[],
+): VertexStencil {
+  const combinedWeights = new Map<number, number>()
+
+  for (const entry of entries) {
+    if (Math.abs(entry.weight) < 1e-8) {
+      continue
+    }
+
+    for (let index = 0; index < entry.stencil.indices.length; index += 1) {
+      const sourceIndex = entry.stencil.indices[index]
+      const sourceWeight = entry.stencil.weights[index] * entry.weight
+      combinedWeights.set(sourceIndex, (combinedWeights.get(sourceIndex) ?? 0) + sourceWeight)
+    }
+  }
+
+  const filteredEntries = [...combinedWeights.entries()]
+    .filter(([, weight]) => Math.abs(weight) > 1e-8)
+    .sort(([indexA], [indexB]) => indexA - indexB)
+
+  const totalWeight = filteredEntries.reduce((sum, [, weight]) => sum + weight, 0)
+  if (filteredEntries.length === 0 || Math.abs(totalWeight) < 1e-8) {
+    return {
+      indices: [],
+      weights: [],
+    }
+  }
+
+  return {
+    indices: filteredEntries.map(([index]) => index),
+    weights: filteredEntries.map(([, weight]) => weight / totalWeight),
+  }
+}
+
+function smoothRenderTopology(
+  topology: RenderTopology,
+  passes: number,
+  lambda: number,
+): RenderTopology {
+  if (passes <= 0 || lambda <= 0) {
+    return topology
+  }
+
+  const adjacency = buildTopologyAdjacency(topology.triangles, topology.vertexStencils.length)
+  let vertexStencils = topology.vertexStencils.map(cloneVertexStencil)
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    const nextStencils = vertexStencils.map(cloneVertexStencil)
+
+    for (let index = 0; index < vertexStencils.length; index += 1) {
+      if (topology.creaseVertices[index]) {
+        continue
+      }
+
+      const neighbors = adjacency[index]
+      if (neighbors.length === 0) {
+        continue
+      }
+
+      const neighborWeight = 1 / neighbors.length
+      const neighborAverage = combineVertexStencils(
+        neighbors.map((neighborIndex) => ({
+          stencil: vertexStencils[neighborIndex],
+          weight: neighborWeight,
+        })),
+      )
+
+      nextStencils[index] = combineVertexStencils([
+        { stencil: vertexStencils[index], weight: 1 - lambda },
+        { stencil: neighborAverage, weight: lambda },
+      ])
+    }
+
+    vertexStencils = nextStencils
+  }
+
+  return {
+    vertexStencils,
+    triangles: topology.triangles.map(
+      ([indexA, indexB, indexC]) => [indexA, indexB, indexC] satisfies TriangleIndices,
+    ),
+    indices: [...topology.indices],
+    wireEdgePairs: [...topology.wireEdgePairs],
+    creaseVertices: [...topology.creaseVertices],
+    creaseEdges: new Set(topology.creaseEdges),
+  }
+}
+
+function subdivideRenderTopology(topology: RenderTopology): RenderTopology {
+  const vertexCount = topology.vertexStencils.length
+  const adjacency = buildTopologyAdjacency(topology.triangles, vertexCount)
+  const edgeOpposites = new Map<string, number[]>()
+  const edgeEndpoints = new Map<string, [number, number]>()
+  const creaseNeighbors = Array.from({ length: vertexCount }, () => new Set<number>())
+
+  const registerEdge = (indexA: number, indexB: number, oppositeIndex: number): void => {
+    const edgeKey = makeEdgeKey(indexA, indexB)
+    if (!edgeEndpoints.has(edgeKey)) {
+      edgeEndpoints.set(edgeKey, [indexA, indexB])
+    }
+
+    const opposites = edgeOpposites.get(edgeKey)
+    if (opposites) {
+      opposites.push(oppositeIndex)
+      return
+    }
+
+    edgeOpposites.set(edgeKey, [oppositeIndex])
+  }
+
+  for (const [indexA, indexB, indexC] of topology.triangles) {
+    registerEdge(indexA, indexB, indexC)
+    registerEdge(indexB, indexC, indexA)
+    registerEdge(indexC, indexA, indexB)
+  }
+
+  for (const [edgeKey, [indexA, indexB]] of edgeEndpoints) {
+    const oppositeCount = edgeOpposites.get(edgeKey)?.length ?? 0
+    if (topology.creaseEdges.has(edgeKey) || oppositeCount <= 1) {
+      creaseNeighbors[indexA].add(indexB)
+      creaseNeighbors[indexB].add(indexA)
+    }
+  }
+
+  const nextVertexStencils = new Array<VertexStencil>(vertexCount)
+  const nextCreaseVertices = Array.from({ length: vertexCount }, (_, index) =>
+    topology.creaseVertices[index] || creaseNeighbors[index].size > 0,
+  )
+
+  for (let index = 0; index < vertexCount; index += 1) {
+    const vertexStencil = topology.vertexStencils[index]
+    const sharpNeighbors = [...creaseNeighbors[index]]
+
+    if (sharpNeighbors.length === 2) {
+      nextVertexStencils[index] = combineVertexStencils([
+        { stencil: vertexStencil, weight: 0.75 },
+        { stencil: topology.vertexStencils[sharpNeighbors[0]], weight: 0.125 },
+        { stencil: topology.vertexStencils[sharpNeighbors[1]], weight: 0.125 },
+      ])
+      continue
+    }
+
+    if (sharpNeighbors.length > 2) {
+      const sharedWeight = 0.25 / sharpNeighbors.length
+      nextVertexStencils[index] = combineVertexStencils([
+        { stencil: vertexStencil, weight: 0.75 },
+        ...sharpNeighbors.map((neighborIndex) => ({
+          stencil: topology.vertexStencils[neighborIndex],
+          weight: sharedWeight,
+        })),
+      ])
+      continue
+    }
+
+    const neighbors = adjacency[index]
+    if (neighbors.length === 0) {
+      nextVertexStencils[index] = cloneVertexStencil(vertexStencil)
+      continue
+    }
+
+    const valence = neighbors.length
+    const beta = valence === 3 ? 3 / 16 : 3 / (8 * valence)
+    nextVertexStencils[index] = combineVertexStencils([
+      { stencil: vertexStencil, weight: 1 - valence * beta },
+      ...neighbors.map((neighborIndex) => ({
+        stencil: topology.vertexStencils[neighborIndex],
+        weight: beta,
+      })),
+    ])
+  }
+
+  const edgeVertexIndices = new Map<string, number>()
+  const nextCreaseEdges = new Set<string>()
+  const orderedEdges = [...edgeEndpoints.entries()].sort(([edgeKeyA], [edgeKeyB]) =>
+    edgeKeyA.localeCompare(edgeKeyB),
+  )
+
+  for (const [edgeKey, [indexA, indexB]] of orderedEdges) {
+    const opposites = edgeOpposites.get(edgeKey) ?? []
+    const isSharpEdge = topology.creaseEdges.has(edgeKey) || opposites.length <= 1
+
+    const oddStencil = isSharpEdge || opposites.length < 2
+      ? combineVertexStencils([
+          { stencil: topology.vertexStencils[indexA], weight: 0.5 },
+          { stencil: topology.vertexStencils[indexB], weight: 0.5 },
+        ])
+      : combineVertexStencils([
+          { stencil: topology.vertexStencils[indexA], weight: 3 / 8 },
+          { stencil: topology.vertexStencils[indexB], weight: 3 / 8 },
+          { stencil: topology.vertexStencils[opposites[0]], weight: 1 / 8 },
+          { stencil: topology.vertexStencils[opposites[1]], weight: 1 / 8 },
+        ])
+
+    const edgeVertexIndex = nextVertexStencils.length
+    nextVertexStencils.push(oddStencil)
+    nextCreaseVertices.push(isSharpEdge)
+    edgeVertexIndices.set(edgeKey, edgeVertexIndex)
+
+    if (isSharpEdge) {
+      nextCreaseEdges.add(makeEdgeKey(indexA, edgeVertexIndex))
+      nextCreaseEdges.add(makeEdgeKey(edgeVertexIndex, indexB))
+    }
+  }
+
+  const nextTriangles: TriangleIndices[] = []
+  for (const [indexA, indexB, indexC] of topology.triangles) {
+    const edgeAB = edgeVertexIndices.get(makeEdgeKey(indexA, indexB))
+    const edgeBC = edgeVertexIndices.get(makeEdgeKey(indexB, indexC))
+    const edgeCA = edgeVertexIndices.get(makeEdgeKey(indexC, indexA))
+
+    if (edgeAB === undefined || edgeBC === undefined || edgeCA === undefined) {
+      throw new Error('Failed to build subdivided render topology.')
+    }
+
+    nextTriangles.push(
+      [indexA, edgeAB, edgeCA],
+      [edgeAB, indexB, edgeBC],
+      [edgeCA, edgeBC, indexC],
+      [edgeAB, edgeBC, edgeCA],
+    )
+  }
+
+  return {
+    vertexStencils: nextVertexStencils,
+    triangles: nextTriangles,
+    indices: nextTriangles.flat(),
+    wireEdgePairs: buildWireEdgePairs(nextTriangles),
+    creaseVertices: nextCreaseVertices,
+    creaseEdges: nextCreaseEdges,
+  }
 }
